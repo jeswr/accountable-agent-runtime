@@ -38,6 +38,10 @@ export declare function serializeTurtle(quads: readonly Quad[], format?: string)
  * equal across runs regardless of n3.Writer's pretty-print / blank-node labelling.
  */
 export declare function canonicalize(quads: readonly Quad[]): Promise<string>;
-/** Parse an RDF body (Turtle by default) to a `DatasetCore` via the sanctioned parser. */
-export declare function parseTurtle(body: string, contentType?: string): Promise<DatasetCore>;
+/**
+ * Parse an RDF body (Turtle by default) to a `DatasetCore` via the sanctioned parser.
+ * `baseIRI` (the resource's own URL, where known) resolves relative IRIs — valid and
+ * common in Solid resources; pass it whenever the caller knows the document URL.
+ */
+export declare function parseTurtle(body: string, contentType?: string, baseIRI?: string): Promise<DatasetCore>;
 //# sourceMappingURL=rdf.d.ts.map

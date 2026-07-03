@@ -90,8 +90,13 @@ export function serializeTurtle(quads, format = "text/turtle") {
 export function canonicalize(quads) {
     return canonicalNQuads(quads);
 }
-/** Parse an RDF body (Turtle by default) to a `DatasetCore` via the sanctioned parser. */
-export async function parseTurtle(body, contentType = "text/turtle") {
-    return (await parseRdf(body, contentType));
+/**
+ * Parse an RDF body (Turtle by default) to a `DatasetCore` via the sanctioned parser.
+ * `baseIRI` (the resource's own URL, where known) resolves relative IRIs — valid and
+ * common in Solid resources; pass it whenever the caller knows the document URL.
+ */
+export async function parseTurtle(body, contentType = "text/turtle", baseIRI) {
+    const options = baseIRI !== undefined ? { baseIRI } : undefined;
+    return (await parseRdf(body, contentType, options));
 }
 //# sourceMappingURL=rdf.js.map

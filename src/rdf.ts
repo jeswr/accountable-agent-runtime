@@ -115,7 +115,16 @@ export function canonicalize(quads: readonly Quad[]): Promise<string> {
   return canonicalNQuads(quads);
 }
 
-/** Parse an RDF body (Turtle by default) to a `DatasetCore` via the sanctioned parser. */
-export async function parseTurtle(body: string, contentType = "text/turtle"): Promise<DatasetCore> {
-  return (await parseRdf(body, contentType)) as unknown as DatasetCore;
+/**
+ * Parse an RDF body (Turtle by default) to a `DatasetCore` via the sanctioned parser.
+ * `baseIRI` (the resource's own URL, where known) resolves relative IRIs — valid and
+ * common in Solid resources; pass it whenever the caller knows the document URL.
+ */
+export async function parseTurtle(
+  body: string,
+  contentType = "text/turtle",
+  baseIRI?: string,
+): Promise<DatasetCore> {
+  const options = baseIRI !== undefined ? { baseIRI } : undefined;
+  return (await parseRdf(body, contentType, options)) as unknown as DatasetCore;
 }

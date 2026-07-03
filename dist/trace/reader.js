@@ -55,7 +55,8 @@ async function readParsed(source, url) {
         return undefined;
     }
     const { parseTurtle } = await import("../rdf.js");
-    const dataset = await parseTurtle(res.body, res.contentType);
+    // The resource URL is the base IRI — resolves any relative IRIs in the document.
+    const dataset = await parseTurtle(res.body, res.contentType, url);
     const store = new Store();
     store.addQuads([...dataset]);
     return store;
@@ -111,7 +112,8 @@ export async function loadTrace(source, base, options = {}) {
         if (res === undefined) {
             continue;
         }
-        const policy = await parsePolicy(res.body, res.contentType);
+        // Parse relative to the policy document URL (relative IRIs resolve correctly).
+        const policy = await parsePolicy(res.body, res.contentType, docUrl);
         if (policy?.id !== undefined) {
             policies.set(policy.id, policy);
         }
