@@ -59,6 +59,14 @@ export interface VerifyAuthorityOptions {
      * principal MUST equal that leaf assignee (composition rule: chain₂.root ≡ chain₁.leaf).
      */
     readonly actorChain?: PresentedChain;
+    /**
+     * When set, the chain's leaf assignee MUST equal this WebID (else deny in Phase B).
+     * Used by the D9 identity composition to PIN the second chain's leaf assignee to the
+     * authenticated `actor` — without it, a second chain rooted correctly but authorizing
+     * some OTHER party would be wrongly accepted for `actor` (Phase D pins the request to
+     * the chain's own leaf assignee, so the actor identity must be checked explicitly).
+     */
+    readonly requireLeafAssignee?: string;
 }
 /** The result of a four-phase verification. */
 export interface VerifyAuthorityResult {

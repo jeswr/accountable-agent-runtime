@@ -246,6 +246,24 @@ describe("the four-phase chain verifier — golden-master decision matrix", () =
     expect(r.code).toBe("IDENTITY_COMPOSITION_FAILED");
   });
 
+  it("IDENTITY COMPOSITION (actor ≠ chain₂ leaf): a correctly-rooted second chain that authorizes a DIFFERENT party is rejected for the actor", async () => {
+    // Regression for the roborev round-1 HIGH: the institute chain (rooted at inst,
+    // authorizing agentR) must NOT authorize some OTHER acting WebID just because it
+    // is rooted correctly. Phase D pins the request to chain₂'s own leaf (agentR), so
+    // the actor identity must be checked explicitly (requireLeafAssignee).
+    const rogue = "https://institute.example/agents/rogue#it";
+    const r = await verify({
+      actor: rogue,
+      actorChain: {
+        credentials: [base.credentials.instituteAgent],
+        policies: [base.instituteInternal],
+      },
+    });
+    expect(r.authorized).toBe(false);
+    expect(r.phase).toBe("composition");
+    expect(r.code).toBe("IDENTITY_COMPOSITION_FAILED");
+  });
+
   it("GOLDEN: the full decision matrix (verdict per case)", async () => {
     const rows: Array<[string, Promise<VerifyAuthorityResult>]> = [
       ["happy", verify({})],

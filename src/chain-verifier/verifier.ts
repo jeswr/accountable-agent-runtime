@@ -99,6 +99,14 @@ export interface VerifyAuthorityOptions {
    * principal MUST equal that leaf assignee (composition rule: chain₂.root ≡ chain₁.leaf).
    */
   readonly actorChain?: PresentedChain;
+  /**
+   * When set, the chain's leaf assignee MUST equal this WebID (else deny in Phase B).
+   * Used by the D9 identity composition to PIN the second chain's leaf assignee to the
+   * authenticated `actor` — without it, a second chain rooted correctly but authorizing
+   * some OTHER party would be wrongly accepted for `actor` (Phase D pins the request to
+   * the chain's own leaf assignee, so the actor identity must be checked explicitly).
+   */
+  readonly requireLeafAssignee?: string;
 }
 
 /** The result of a four-phase verification. */
@@ -443,6 +451,19 @@ export async function verifyAgentAuthority(
       chainIds,
     );
   }
+  // D9 pin: when the caller requires a specific leaf assignee (the identity
+  // composition pins the second chain's leaf to the authenticated actor), the chain
+  // MUST prove authority for exactly that party. Without this, a chain rooted
+  // correctly but authorizing some OTHER party would be accepted, because Phase D
+  // always evaluates the chain's OWN leaf assignee (the roborev round-1 HIGH).
+  if (options.requireLeafAssignee !== undefined && leafAssignee !== options.requireLeafAssignee) {
+    return deny(
+      "B",
+      "BINDING_MISMATCH",
+      `Chain leaf assignee <${leafAssignee}> ≠ the required party <${options.requireLeafAssignee}>.`,
+      chainIds,
+    );
+  }
 
   // --- Phase C: status ∪ revocation, fail-closed ---------------------------
   if (options.statusUnreachable === true) {
@@ -496,6 +517,9 @@ export async function verifyAgentAuthority(
     actorResult = await verifyAgentAuthority(options.actorChain, {
       request: { ...request, agent: options.actor },
       rootPrincipal: leafAssignee, // composition rule: chain₂.root ≡ chain₁.leaf
+      // PIN chain₂'s leaf assignee to the actor — chain₂ must prove authority for
+      // `actor` itself, not for some other party it happens to be rooted to name.
+      requireLeafAssignee: options.actor,
       now,
       resolveKey,
       ...(options.isControlledBy !== undefined && { isControlledBy: options.isControlledBy }),
