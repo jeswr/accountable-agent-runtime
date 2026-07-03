@@ -61,6 +61,67 @@ describe("audit re-run fidelity", () => {
     expect(trace.policies.has(r.cast.agreementId)).toBe(true);
   });
 
+  it("SSRF guard: a NON-HTTP svc:policy IRI is never dereferenced (no source.get for it)", async () => {
+    const r = await runScenario();
+    // Record every URL the source is asked for.
+    const requested: string[] = [];
+    const spy = {
+      get: (url: string) => {
+        requested.push(url);
+        return r.pod.get(url);
+      },
+      list: (prefix: string) => r.pod.list(prefix),
+    };
+    // Inject a credential whose svc:policy is a file: IRI (an SSRF/local-file probe),
+    // and stash a would-be policy at that URL so ONLY the guard prevents loading it.
+    r.pod.put(
+      `${r.cast.engagementBase}credentials/evil.vc.jsonld`,
+      JSON.stringify({
+        issuer: "https://attacker.example/#me",
+        type: ["AgentAuthorizationCredential"],
+        credentialSubject: {
+          id: "https://attacker.example/#me",
+          "https://w3id.org/jeswr/solid-vc#authorizes": "https://attacker.example/agent#it",
+          "https://w3id.org/jeswr/solid-vc#action": "read",
+          "https://w3id.org/jeswr/solid-vc#policy": "file:///etc/passwd#p",
+        },
+      }),
+      "application/ld+json",
+    );
+    r.pod.put("file:///etc/passwd", "SECRET", "text/turtle");
+
+    const trace = await loadTrace(spy, r.cast.engagementBase);
+    expect(requested).not.toContain("file:///etc/passwd");
+    expect(trace.policies.has("file:///etc/passwd#p")).toBe(false);
+  });
+
+  it("MEDIUM regression: a recorded decision with NO purpose re-runs with no purpose → denied by a purpose-constrained policy", async () => {
+    const r = await runScenario();
+    // Overwrite the decision record so the recorded request asserted NO purpose.
+    await writeDecision(r.pod, r.cast.engagementBase, "req-1", {
+      id: `${r.cast.engagementBase}decisions/req-1.ttl#record`,
+      request: { action: "read", target: r.cast.records }, // no purpose
+      evaluatedAt: r.now,
+      rootPrincipal: r.cast.alice,
+      actor: r.cast.agentR,
+      leafAssignee: r.cast.inst,
+      revokedConsulted: [],
+      result: r.verification,
+    });
+    const trace = await loadTrace(r.pod, r.cast.engagementBase);
+    expect(
+      trace.recordedDecisions.find((d) => d.requestTarget === r.cast.records)?.requestPurpose,
+    ).toBeUndefined();
+    const audit = await auditArtifact(trace, r.cast.derivedArtifact, {
+      resolveKey: r.keyRing.resolveKey,
+      isControlledBy: sameOriginController,
+    });
+    // the agreement's read permission is purpose-constrained → no purpose denies
+    expect(audit.reRun?.authorized).toBe(false);
+    expect(audit.reRun?.code).toBe("POLICY_DENIED");
+    expect(audit.divergence).toBe(true);
+  });
+
   it("MEDIUM regression: the trace's own published revocation is consulted without the caller supplying it", async () => {
     const r = await runScenario();
     // Publish revocations.ttl revoking the agreement (as the owner would).
