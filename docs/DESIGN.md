@@ -118,6 +118,9 @@ see the honest boundary, §5, for why duplication matters):
                            (issuer = subject = Alice's WebID; svc:authorizes = A)
     agreement.vc.jsonld    the credential binding agreement.ttl (issuer = A… see G15
                            for the countersignature honest note)
+    institute-agent.vc.jsonld  the institute's own credential covering its acting
+                           agent (principal = inst, svc:authorizes = its agent) —
+                           the identity-composition chain (§3.2 step 3, G7)
   chain.prov.ttl           delegationProvenance([mandate, agreement]) — the PROV
                            overlay: wasAttributedTo / delegatedUnder / wasDerivedFrom
                            / actedOnBehalfOf per hop
@@ -176,9 +179,14 @@ only read access and the standard vocabularies:
    current instant for "is it still"); (b) cross-bind issuer/subject/assigner/assignee (Phase B);
    (c) union the Bitstring status bits and `odrld:Revocation` statements into the revoked set
    (Phase C); (d) `evaluateDelegated(chain, {agent, action, target, attributes}, {now, revoked})`
-   (Phase D) with the request reconstructed from the activity bundle (agent = the associated
-   agent; action = read/derive per `prov:used`; target = the used resource; purpose from the
-   agreement's constraint left-operands). The recorded `decisions/<id>.ttl` lets the auditor
+   (Phase D) with the request reconstructed from the activity bundle (action = read/derive per
+   `prov:used`; target = the used resource; purpose from the agreement's constraint
+   left-operands). Where the leaf assignee is an **organisation** and the associated agent is
+   its software agent, the walk applies the **identity-composition rule** (part of G7, §4):
+   Phase D runs with agent = the leaf assignee, and the acting WebID is covered only by a
+   *second* four-phase-verified chain whose trusted root principal **is** that leaf assignee
+   (the institute's own AgentAuthorizationCredential over its agent — the
+   `prov:actedOnBehalfOf` edge, made verifiable). The recorded `decisions/<id>.ttl` lets the auditor
    *compare* what the verifier decided at action time with what an independent re-run decides —
    a divergence is itself a finding.
 4. **The dispute answer.** If the *use* (the purpose evident in the offending artifact) falls
@@ -208,7 +216,7 @@ The full call-by-call walk is [`SCENARIO.md`](./SCENARIO.md). The seam table:
 | 3 | pin + verify the protocol | `solid-a2a` `verifyProtocolDocument(fetchedTurtle, hash)` | ✅ / **G11** (no transport — runtime is the carrier) |
 | 3 | upgrade handshake | `solid-a2a` `encodeUpgradeOffer({…, required: true})`, `decodeUpgradeResponse`, `mayDowngradeToNl` | ✅ |
 | 3 | intent exchange | `solid-a2a` `parseIntent` / `validateIntent(intent, pd)` | ✅ / **G12** (no prebuilt purpose+period grant shape) |
-| 4 | verify the peer's authority | **the four-phase verifier**: `solid-vc` `verifyCredential` (Phase A) + cross-binding (Phase B) + status∪revocation (Phase C) + `solid-odrl` `evaluateDelegated` (Phase D); request via `requestContextFromA2AIntent` | **G7** (Phases B–C + assembly implemented nowhere; the runtime's one new component) + **G2, G4** |
+| 4 | verify the peer's authority | **the four-phase verifier**: `solid-vc` `verifyCredential` (Phase A) + cross-binding (Phase B) + status∪revocation (Phase C) + `solid-odrl` `evaluateDelegated` (Phase D); request via `requestContextFromA2AIntent`; org-assignee actors via the **identity-composition rule** (second chain rooted at the leaf assignee) | **G7** (Phases B–C + assembly + identity composition implemented nowhere; the runtime's one new component) + **G2, G4** |
 | 5 | conclude the Agreement | `solid-odrl` policy types (+ `odrld:delegatedUnder`), `policyToTurtle`; sign via `solid-vc` `issue` | ✅ / **G15** (no countersigning path) |
 | 6 | materialise access | `@solid/object` typed `.acl` accessors (WAC grant: institute WebID, `acl:Read`, target) | ✅ (existing lib) / **G14** (WAC cannot reference the agreement) |
 | 7 | act + record | injected DPoP-authed `fetch`; PROV bundle written via typed accessors + `n3.Writer`; `solid-odrl` `delegationProvenance(chain)` for the overlay | **G8** (no `actionProvenance()` emitter) |
@@ -256,7 +264,14 @@ not newly discovered); the rest are new findings from this design.
   package implements it alone by design."* This is the runtime's one genuinely new component.
   Build it **inside the runtime first** (`chain-verifier/`), with the delegation decision matrix
   discipline (golden-master over the note's error codes: `POLICY_INTEGRITY`, `CHAIN_MALFORMED`,
-  `BINDING_MISMATCH`, `STATUS_RETRIEVAL_ERROR`, `POLICY_DENIED`, plus Phase A's codes), then
+  `BINDING_MISMATCH`, `STATUS_RETRIEVAL_ERROR`, `POLICY_DENIED`, plus Phase A's codes). Its spec
+  additionally pins the **identity-composition rule** the note leaves implicit: when the leaf
+  assignee is a principal `p` and the authenticated actor is `w ≠ p`, the verifier accepts `w`
+  only via a second four-phase-verified chain **whose trusted root principal is `p`** and which
+  permits `w` the requested action (chain₂'s root = chain₁'s leaf assignee) — otherwise an
+  org-assigned agreement could never be exercised by the org's own agents, or worse, would
+  tempt implementers to skip the leaf-assignee check (the fail-open the roborev round-1 review
+  caught in this design's own first draft). Then
   extract to `@jeswr/agent-authz-verifier` once stable — it is exactly the artifact a *pod
   server's* future authorizer (M5a) and any relying party both need, so it must not stay
   runtime-private long.

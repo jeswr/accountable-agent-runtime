@@ -50,3 +50,15 @@ out-of-scope use, the revoked subtree, and the PROV-omitting actor alongside the
 accountability demonstration that only shows compliance is marketing; the §4 claim is only
 credible where the failure modes are exercised (the suite's adversarial-verify discipline,
 applied to the artifact itself).
+
+**D9 — the identity-composition rule (from roborev round 1).** The first draft granted WAC to
+`agentR` while the leaf agreement named `inst` as assignee — Phase D would correctly deny the
+acting agent (the reviewer's Medium). Rather than flip the assignee to `agentR` (which would
+detach *legal* accountability from the organisation the paper attaches it to), the verifier spec
+gains an explicit composition rule: an acting WebID `w ≠ leaf assignee p` is covered only by a
+second four-phase-verified chain whose trusted root principal is `p` (the institute's own
+AgentAuthorizationCredential over its agent). This keeps org-level accountability AND a
+verifiable `prov:actedOnBehalfOf` edge, and forecloses the tempting fail-open of skipping the
+leaf-assignee check. Alternative rejected: extending Alice's chain with an inst→agentR hop —
+that would require Alice's agreement to carry `grantUse` for inst (widening Alice's grant) and
+puts the institute's internal delegation under Alice's policy authority, which is backwards.

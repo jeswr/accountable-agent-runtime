@@ -228,9 +228,19 @@ const decision = await verifyAgentAuthority(chainFromA, request, new Date());
 if (decision.decision !== "permit") throw refuse(decision.reason, decision.hops);
 ```
 
-*(Note the paper's institute-side mirror: R also presents its own authorization credential and
-federation-membership credential — verified with the same four phases plus
-`@jeswr/federation-trust` for the membership; that path reuses this verifier unchanged.)*
+**The identity-composition rule (institute side).** The leaf agreement (step 5) names the
+**institute** (`inst`) as assignee — legal accountability attaches to the organisation — but the
+*authenticated actor* on the wire is `agentR`. Phase D requires the requesting agent to be the
+leaf assignee, so `agentR` is **not** covered by the Alice-chain alone. The paper's own setup
+closes this: *"The institute's agent carries its own authorization credential."* Concretely, the
+verifier accepts an acting WebID `w` for a leaf assignee `p` only when `w === p`, **or** when a
+**second four-phase-verified chain, whose trusted root principal is `p`**, permits `w` to perform
+the requested action (here: `inst` issues its own AgentAuthorizationCredential — principal =
+`inst`, `svc:authorizes` = `agentR`, action/target within the agreement — verified with the same
+`verifyAgentAuthority`, with `rootPrincipal: inst`). Composition rule: **chain₂'s trusted root
+must equal chain₁'s leaf assignee.** Both decisions are recorded (step 7). R's
+federation-membership credential is verified alongside via `@jeswr/federation-trust`; that path
+reuses this verifier unchanged.
 
 ## Step 5 — the Agreement
 
@@ -268,7 +278,17 @@ const agreementVcFromA = await issueAgentAuthorization(
 ```
 
 The chain the institute will present from now on is `[mandate, agreement]`, credentials
-`[mandateVc, agreementVcFromA]`.
+`[mandateVc, agreementVcFromA]` — **plus** the institute's own internal authorization
+credential covering its acting agent (the identity-composition rule, step 4):
+
+```ts
+// inst → agentR: "our research agent may exercise this agreement for us"
+const instAgentVc = await issueAgentAuthorization(
+  { principal: inst, agent: agentR, action: "read", target: records,
+    policy: agreement.id, validUntil: "2027-07-03T00:00:00Z" },
+  instKey,
+);
+```
 
 ## Step 6 — scoped access materialises
 
@@ -280,6 +300,9 @@ actually enforces — here, WAC on the concrete resource:
 // add an acl:Authorization granting acl:Read on <records> to agent <inst-agents>
 // (the institute's authenticated WebIDs), acl:accessTo <records>.
 await writeAclGrant({ target: records, agent: agentR, modes: ["Read"] });
+// the grant names agentR (the AUTHENTICATED actor), justified by the agreement
+// (assignee inst) PLUS instAgentVc (inst → agentR) — the identity-composition
+// rule of step 4; the decision record captures both chains.
 // [G14] the .acl cannot reference the agreement; the decision record (step 7)
 // records "this WAC mutation ← this agreement" so the linkage survives in the trace.
 ```
@@ -328,7 +351,10 @@ Alice finds her data used outside the stated purpose. The auditor:
    `odrld:delegatedUnder*` → the mandate; each `prov:wasAttributedTo` → agentA, Alice. **Who
    authorized: Alice → agent A → the institute, every link a signed artifact.**
 3. Re-runs step 4's four phases over the trace with `now` = the activity's
-   `prov:startedAtTime`: the *read* was authorized then. Re-runs Phase D with the **actual use**
+   `prov:startedAtTime` — **both chains**: the Alice-chain `[mandate, agreement]` for the
+   request with agent = `inst`, and the institute chain (`instAgentVc`, root principal =
+   `inst` = the leaf assignee) covering the associated agent `agentR` — the *read* was
+   authorized then. Re-runs Phase D with the **actual use**
    (`purpose` = the one evident in the offending artifact): **deny** — outside the agreement's
    `purpose` constraint. **In scope? No — and the breach is now a mechanical, signed finding**,
    with the unfulfilled `delete` duty aggregated in the decision for good measure.
