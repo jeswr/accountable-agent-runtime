@@ -1,0 +1,19 @@
+{
+  "name": "accountable-agent-runtime",
+  "kind": "design",
+  "status": "design",
+  "description": "Reference accountable-agent runtime (design-only): composes solid-agent-card + solid-a2a + solid-odrl (agent-delegation profile) + solid-vc + the agent-authz credential note into the Accountable Web of Agents vision paper's §4 worked scenario, made executable — a delegated agent acts and leaves a verifiable on-pod accountability trace; includes the composed four-phase chain verifier and the M1–M4 API gap list (G1–G15).",
+  "dependsOn": [
+    "solid-agent-card",
+    "solid-a2a",
+    "solid-odrl",
+    "solid-vc",
+    "agent-authz-credential-spec",
+    "guarded-fetch",
+    "fetch-rdf"
+  ],
+  "relatedRepos": [
+    "jeswr/agentic-solid-vision",
+    "jeswr/full-solid-ecosystem"
+  ]
+}
