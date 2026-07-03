@@ -1,0 +1,10 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`the §4 scenario, end to end > golden: the chain provenance overlay (date-free, fully deterministic) 1`] = `
+"<https://alice.solid.example/agents/engagements/e1/agreement.ttl#policy> <http://www.w3.org/ns/prov#wasAttributedTo> <https://agent-a.example/id#it> .
+<https://alice.solid.example/agents/engagements/e1/agreement.ttl#policy> <http://www.w3.org/ns/prov#wasDerivedFrom> <https://alice.solid.example/agents/engagements/e1/mandate.ttl#policy> .
+<https://alice.solid.example/agents/engagements/e1/agreement.ttl#policy> <https://w3id.org/jeswr/odrl-delegation#delegatedUnder> <https://alice.solid.example/agents/engagements/e1/mandate.ttl#policy> .
+<https://alice.solid.example/agents/engagements/e1/mandate.ttl#policy> <http://www.w3.org/ns/prov#wasAttributedTo> <https://alice.solid.example/profile/card#me> .
+<https://institute.example/org#id> <http://www.w3.org/ns/prov#actedOnBehalfOf> <https://agent-a.example/id#it> .
+"
+`;
