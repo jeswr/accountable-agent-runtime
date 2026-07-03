@@ -1,0 +1,3 @@
+export type { ActiveDuty, Decision, DecisionRule, DelegatedEvaluationResult, DelegationEvaluateOptions, DelegationHopTrace, EvaluationResult, OdrlConstraint, OdrlDuty, OdrlPolicy, OdrlRule, PolicyType, RequestContext, RuleType, } from "@jeswr/solid-odrl";
+export { constraintSatisfied, DEFAULT_MAX_CHAIN_LENGTH, delegationProvenance, evaluate, evaluateDelegated, matchingPermissions, ODRL, ODRL_GRANT_USE, ODRL_NEXT_POLICY, ODRLD, ODRLD_DELEGATED_UNDER, ODRLD_PROFILE_IRI, ODRLD_REVOCATION_CLASS, ODRLD_REVOKED_POLICY, PROV_ACTED_ON_BEHALF_OF, PROV_WAS_ATTRIBUTED_TO, PROV_WAS_DERIVED_FROM, parsePolicy, policyFromRdf, policyToTurtle, requestContextFromA2AIntent, requestContextFromWac, } from "@jeswr/solid-odrl";
+//# sourceMappingURL=odrl.d.ts.map

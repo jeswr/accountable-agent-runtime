@@ -1,0 +1,1 @@
+{"version":3,"file":"errors.js","sourceRoot":"","sources":["../../src/chain-verifier/errors.ts"],"names":[],"mappings":"AAAA,gFAAgF;AAChF,EAAE;AACF,iFAAiF;AACjF,kFAAkF;AAClF,iFAAiF;AACjF,qFAAqF;AA6CrF,gFAAgF;AAChF,MAAM,CAAC,MAAM,aAAa,GAAG,IAAI,GAAG,CAAoB;IACtD,WAAW;IACX,UAAU;IACV,qBAAqB;IACrB,mBAAmB;IACnB,SAAS;IACT,eAAe;IACf,iBAAiB;IACjB,wBAAwB;IACxB,kBAAkB;CACnB,CAAC,CAAC"}
