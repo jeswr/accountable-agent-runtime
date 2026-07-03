@@ -12,6 +12,7 @@ export type {
   AuditReport,
   AuthorityLink,
   LoadedTrace,
+  LoadTraceOptions,
   RecordedDecision,
   ResourceSource,
   StoredResource,

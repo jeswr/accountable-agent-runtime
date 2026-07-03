@@ -30,6 +30,6 @@ export type { ActiveDuty, DelegatedEvaluationResult, OdrlConstraint, OdrlDuty, O
 export { delegationProvenance, evaluateDelegated } from "./odrl.js";
 export type { ActorKey, RunScenarioOptions, ScenarioResult, WacGrant } from "./scenario/index.js";
 export { buildAgreement, buildInstituteInternal, buildMandate, buildReadRequest, buildRuntimeProtocolDocument, CAST, generateActorKey, InMemoryPod, KeyRing, RUNTIME_PROTOCOL_ID, runScenario, ScenarioRefusal, sameOriginController, VALID_FROM, VALID_UNTIL, } from "./scenario/index.js";
-export type { ActionProvenanceInput, AuditOptions, AuditReport, AuthorityLink, DecisionRecordInput, EngagementTrace, LoadedTrace, NamedCredential, ParsedDecisionRecord, RecordedDecision, ResourceSink, ResourceSource, StoredResource, WrittenArtifact, } from "./trace/index.js";
+export type { ActionProvenanceInput, AuditOptions, AuditReport, AuthorityLink, DecisionRecordInput, EngagementTrace, LoadedTrace, LoadTraceOptions, NamedCredential, ParsedDecisionRecord, RecordedDecision, ResourceSink, ResourceSource, StoredResource, WrittenArtifact, } from "./trace/index.js";
 export { actionProvenance, auditArtifact, decisionRecordQuads, loadTrace, writeActivity, writeDecision, writeEngagement, } from "./trace/index.js";
 //# sourceMappingURL=index.d.ts.map

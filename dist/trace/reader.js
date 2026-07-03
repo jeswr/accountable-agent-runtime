@@ -20,6 +20,32 @@ import { readBoundAuthorization, verifyAgentAuthority, } from "../chain-verifier
 import { ODRLD_DELEGATED_UNDER, ODRLD_REVOKED_POLICY, parsePolicy } from "../odrl.js";
 import { AAR_DECISION, AAR_REQUEST_ACTION, AAR_REQUEST_AGENT, AAR_REQUEST_PURPOSE, AAR_REQUEST_TARGET, PROV_ACTED_ON_BEHALF_OF, PROV_HAD_PLAN, PROV_QUALIFIED_ASSOCIATION, PROV_STARTED_AT_TIME, PROV_USED, PROV_WAS_ASSOCIATED_WITH, PROV_WAS_ATTRIBUTED_TO, PROV_WAS_GENERATED_BY, } from "../vocab.js";
 const { namedNode } = DataFactory;
+/**
+ * Validate a credential-supplied policy IRI and return the document URL to fetch, or
+ * `undefined` to skip it. Fail-closed: only absolute http(s) URLs with NO embedded
+ * credentials, and (when supplied) passing the caller's allowlist, are dereferenced.
+ */
+function safePolicyDocUrl(policyIri, isAllowed) {
+    let url;
+    try {
+        url = new URL(policyIri);
+    }
+    catch {
+        return undefined;
+    }
+    if (url.protocol !== "https:" && url.protocol !== "http:") {
+        return undefined;
+    }
+    if (url.username !== "" || url.password !== "") {
+        return undefined;
+    }
+    url.hash = "";
+    const docUrl = url.toString();
+    if (isAllowed !== undefined && !isAllowed(docUrl)) {
+        return undefined;
+    }
+    return docUrl;
+}
 function join(base, path) {
     return base.endsWith("/") ? `${base}${path}` : `${base}/${path}`;
 }
@@ -38,7 +64,7 @@ async function readParsed(source, url) {
  * Load + parse the engagement trace from the pod: the PROV overlay + every activity
  * bundle into one query graph; the policy files + credentials into typed maps.
  */
-export async function loadTrace(source, base) {
+export async function loadTrace(source, base, options = {}) {
     const graph = new Store();
     // The PROV overlay + every activity bundle → the query graph.
     const overlay = await readParsed(source, join(base, "chain.prov.ttl"));
@@ -77,7 +103,10 @@ export async function loadTrace(source, base) {
     // filenames, so any chain shape / resource name audits.
     const policies = new Map();
     for (const policyIri of credentialsByPolicy.keys()) {
-        const docUrl = policyIri.split("#")[0];
+        const docUrl = safePolicyDocUrl(policyIri, options.isPolicyUrlAllowed);
+        if (docUrl === undefined) {
+            continue; // fail-closed: bad scheme / embedded creds / not allowlisted
+        }
         const res = await source.get(docUrl);
         if (res === undefined) {
             continue;
@@ -265,7 +294,11 @@ export async function auditArtifact(trace, artifact, options) {
     const recorded = trace.recordedDecisions.find((d) => d.requestTarget === used[0]) ??
         (trace.recordedDecisions.length === 1 ? trace.recordedDecisions[0] : undefined);
     const action = (recorded?.requestAction ?? "read");
-    const recordedPurpose = recorded?.requestPurpose ?? statedPurpose(leaf);
+    // Use the recorded purpose EXACTLY when a decision was recorded — `undefined` means
+    // the request asserted NO purpose, which a purpose-constrained policy must deny; do
+    // NOT silently inject the policy's permitted purpose (that would mask a real
+    // divergence). Only when NO record exists do we fall back to the stated purpose.
+    const recordedPurpose = recorded !== undefined ? recorded.requestPurpose : statedPurpose(leaf);
     // Phase C consults BOTH the caller-supplied revoked set AND the trace's own
     // published revocations (a revocation present in the trace is never skipped).
     const revoked = [...new Set([...(options.revoked ?? []), ...trace.revokedPolicies])];

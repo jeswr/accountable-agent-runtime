@@ -51,10 +51,61 @@ export interface StoredResource {
   readonly contentType: string;
 }
 
-/** A read source over the pod (Phase 0: the in-memory double; Phase 2: authed fetch). */
+/**
+ * A read source over the pod (Phase 0: the in-memory double; Phase 2: authed fetch).
+ *
+ * SECURITY — this source is the SSRF boundary. `loadTrace` dereferences policy
+ * documents at IRIs read from (untrusted) credentials in the trace. A NETWORK-backed
+ * `ResourceSource` MUST therefore be SSRF-guarded itself (e.g. `@jeswr/guarded-fetch`:
+ * https-only, private/loopback/metadata ranges blocked, no auto-redirect) — exactly
+ * the discipline `@jeswr/solid-agent-card`'s `discoverAgent` documents for its fetch.
+ * `loadTrace` additionally scheme-checks + allowlist-filters every policy IRI before
+ * dereferencing (see {@link LoadTraceOptions.isPolicyUrlAllowed}), but the source is
+ * the last line of defence.
+ */
 export interface ResourceSource {
   get(url: string): Promise<StoredResource | undefined> | StoredResource | undefined;
   list(prefix: string): Promise<readonly string[]> | readonly string[];
+}
+
+/** Options for {@link loadTrace}. */
+export interface LoadTraceOptions {
+  /**
+   * A predicate gating WHICH policy-document URLs (dereferenced from credential
+   * `svc:policy` IRIs) `loadTrace` may fetch — the caller's allowlist against a
+   * malicious trace pointing policy IRIs at arbitrary hosts. When omitted, only the
+   * scheme guard applies (http(s), no embedded credentials). Runs BEFORE any fetch.
+   */
+  readonly isPolicyUrlAllowed?: (url: string) => boolean;
+}
+
+/**
+ * Validate a credential-supplied policy IRI and return the document URL to fetch, or
+ * `undefined` to skip it. Fail-closed: only absolute http(s) URLs with NO embedded
+ * credentials, and (when supplied) passing the caller's allowlist, are dereferenced.
+ */
+function safePolicyDocUrl(
+  policyIri: string,
+  isAllowed?: (url: string) => boolean,
+): string | undefined {
+  let url: URL;
+  try {
+    url = new URL(policyIri);
+  } catch {
+    return undefined;
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    return undefined;
+  }
+  if (url.username !== "" || url.password !== "") {
+    return undefined;
+  }
+  url.hash = "";
+  const docUrl = url.toString();
+  if (isAllowed !== undefined && !isAllowed(docUrl)) {
+    return undefined;
+  }
+  return docUrl;
 }
 
 /** The loaded, parsed engagement trace the auditor queries. */
@@ -103,7 +154,11 @@ async function readParsed(source: ResourceSource, url: string): Promise<Store | 
  * Load + parse the engagement trace from the pod: the PROV overlay + every activity
  * bundle into one query graph; the policy files + credentials into typed maps.
  */
-export async function loadTrace(source: ResourceSource, base: string): Promise<LoadedTrace> {
+export async function loadTrace(
+  source: ResourceSource,
+  base: string,
+  options: LoadTraceOptions = {},
+): Promise<LoadedTrace> {
   const graph = new Store();
 
   // The PROV overlay + every activity bundle → the query graph.
@@ -144,7 +199,10 @@ export async function loadTrace(source: ResourceSource, base: string): Promise<L
   // filenames, so any chain shape / resource name audits.
   const policies = new Map<string, OdrlPolicy>();
   for (const policyIri of credentialsByPolicy.keys()) {
-    const docUrl = policyIri.split("#")[0] as string;
+    const docUrl = safePolicyDocUrl(policyIri, options.isPolicyUrlAllowed);
+    if (docUrl === undefined) {
+      continue; // fail-closed: bad scheme / embedded creds / not allowlisted
+    }
     const res = await source.get(docUrl);
     if (res === undefined) {
       continue;
@@ -416,7 +474,11 @@ export async function auditArtifact(
     trace.recordedDecisions.find((d) => d.requestTarget === used[0]) ??
     (trace.recordedDecisions.length === 1 ? trace.recordedDecisions[0] : undefined);
   const action = (recorded?.requestAction ?? "read") as RequestContext["action"];
-  const recordedPurpose = recorded?.requestPurpose ?? statedPurpose(leaf);
+  // Use the recorded purpose EXACTLY when a decision was recorded — `undefined` means
+  // the request asserted NO purpose, which a purpose-constrained policy must deny; do
+  // NOT silently inject the policy's permitted purpose (that would mask a real
+  // divergence). Only when NO record exists do we fall back to the stated purpose.
+  const recordedPurpose = recorded !== undefined ? recorded.requestPurpose : statedPurpose(leaf);
   // Phase C consults BOTH the caller-supplied revoked set AND the trace's own
   // published revocations (a revocation present in the trace is never skipped).
   const revoked = [...new Set([...(options.revoked ?? []), ...trace.revokedPolicies])];

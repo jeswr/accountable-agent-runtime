@@ -49,6 +49,18 @@ describe("audit re-run fidelity", () => {
     expect(audit.divergence).toBe(true);
   });
 
+  it("SSRF guard: a policy IRI outside the allowlist (or non-http) is not dereferenced", async () => {
+    const r = await runScenario();
+    // Block the institute's host — its internal policy IRI must NOT be fetched.
+    const trace = await loadTrace(r.pod, r.cast.engagementBase, {
+      isPolicyUrlAllowed: (url) => !url.startsWith("https://institute.example/"),
+    });
+    expect(trace.policies.has(r.cast.instituteInternalId)).toBe(false);
+    // the Alice-hosted mandate/agreement policies are still loaded
+    expect(trace.policies.has(r.cast.mandateId)).toBe(true);
+    expect(trace.policies.has(r.cast.agreementId)).toBe(true);
+  });
+
   it("MEDIUM regression: the trace's own published revocation is consulted without the caller supplying it", async () => {
     const r = await runScenario();
     // Publish revocations.ttl revoking the agreement (as the owner would).

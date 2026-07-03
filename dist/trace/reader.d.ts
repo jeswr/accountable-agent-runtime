@@ -7,10 +7,31 @@ export interface StoredResource {
     readonly body: string;
     readonly contentType: string;
 }
-/** A read source over the pod (Phase 0: the in-memory double; Phase 2: authed fetch). */
+/**
+ * A read source over the pod (Phase 0: the in-memory double; Phase 2: authed fetch).
+ *
+ * SECURITY — this source is the SSRF boundary. `loadTrace` dereferences policy
+ * documents at IRIs read from (untrusted) credentials in the trace. A NETWORK-backed
+ * `ResourceSource` MUST therefore be SSRF-guarded itself (e.g. `@jeswr/guarded-fetch`:
+ * https-only, private/loopback/metadata ranges blocked, no auto-redirect) — exactly
+ * the discipline `@jeswr/solid-agent-card`'s `discoverAgent` documents for its fetch.
+ * `loadTrace` additionally scheme-checks + allowlist-filters every policy IRI before
+ * dereferencing (see {@link LoadTraceOptions.isPolicyUrlAllowed}), but the source is
+ * the last line of defence.
+ */
 export interface ResourceSource {
     get(url: string): Promise<StoredResource | undefined> | StoredResource | undefined;
     list(prefix: string): Promise<readonly string[]> | readonly string[];
+}
+/** Options for {@link loadTrace}. */
+export interface LoadTraceOptions {
+    /**
+     * A predicate gating WHICH policy-document URLs (dereferenced from credential
+     * `svc:policy` IRIs) `loadTrace` may fetch — the caller's allowlist against a
+     * malicious trace pointing policy IRIs at arbitrary hosts. When omitted, only the
+     * scheme guard applies (http(s), no embedded credentials). Runs BEFORE any fetch.
+     */
+    readonly isPolicyUrlAllowed?: (url: string) => boolean;
 }
 /** The loaded, parsed engagement trace the auditor queries. */
 export interface LoadedTrace {
@@ -40,7 +61,7 @@ export interface RecordedDecision {
  * Load + parse the engagement trace from the pod: the PROV overlay + every activity
  * bundle into one query graph; the policy files + credentials into typed maps.
  */
-export declare function loadTrace(source: ResourceSource, base: string): Promise<LoadedTrace>;
+export declare function loadTrace(source: ResourceSource, base: string, options?: LoadTraceOptions): Promise<LoadedTrace>;
 /** One link in the authority chain the auditor recovers. */
 export interface AuthorityLink {
     readonly policy: string;

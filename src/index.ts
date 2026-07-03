@@ -82,6 +82,7 @@ export type {
   DecisionRecordInput,
   EngagementTrace,
   LoadedTrace,
+  LoadTraceOptions,
   NamedCredential,
   ParsedDecisionRecord,
   RecordedDecision,
