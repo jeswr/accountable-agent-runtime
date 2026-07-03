@@ -267,9 +267,11 @@ export async function runScenario(options: RunScenarioOptions = {}): Promise<Sce
       { name: "institute-agent", vc: instAgentVc },
     ],
   });
-  // The institute-internal policy (the D9 second-chain root) lives beside the trace.
+  // The institute-internal policy (the D9 second-chain root) is hosted at its IRI's
+  // document URL (the institute's pod), so the auditor discovers it GENERICALLY from
+  // the credential's svc:policy binding — no hard-coded trace filenames.
   pod.put(
-    `${CAST.engagementBase}institute-internal.ttl`,
+    CAST.instituteInternalId.split("#")[0] as string,
     await policyToTurtle(instituteInternal),
     "text/turtle",
   );

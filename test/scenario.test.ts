@@ -33,7 +33,8 @@ describe("the §4 scenario, end to end", () => {
     expect(urls).toContain(`${base}mandate.ttl`);
     expect(urls).toContain(`${base}agreement.ttl`);
     expect(urls).toContain(`${base}chain.prov.ttl`);
-    expect(urls).toContain(`${base}institute-internal.ttl`);
+    // the institute-internal policy is hosted at its IRI's document URL (its pod)
+    expect(urls).toContain("https://institute.example/policies/internal-e1.ttl");
     expect(urls).toContain(`${base}credentials/mandate.vc.jsonld`);
     expect(urls).toContain(`${base}credentials/agreement.vc.jsonld`);
     expect(urls).toContain(`${base}credentials/institute-agent.vc.jsonld`);

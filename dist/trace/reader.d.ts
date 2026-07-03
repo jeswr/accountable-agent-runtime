@@ -23,12 +23,17 @@ export interface LoadedTrace {
     readonly credentialsByPolicy: ReadonlyMap<string, VerifiableCredential>;
     /** The recorded decisions (G9), for the recorded-vs-re-run divergence check. */
     readonly recordedDecisions: readonly RecordedDecision[];
+    /** The revoked policy IRIs the trace itself publishes (`revocations.ttl`, Phase C). */
+    readonly revokedPolicies: readonly string[];
     /** The root principal (the root policy's assigner). */
     readonly rootPrincipal?: string;
 }
-/** A minimal projection of a recorded decision record (G9). */
+/** A projection of a recorded decision record (G9) — the recorded request + verdict. */
 export interface RecordedDecision {
     readonly requestTarget?: string;
+    readonly requestAction?: string;
+    readonly requestPurpose?: string;
+    readonly requestAgent?: string;
     readonly decision: string;
 }
 /**

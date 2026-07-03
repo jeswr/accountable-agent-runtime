@@ -26,9 +26,12 @@ import {
   verifyAgentAuthority,
 } from "../chain-verifier/index.js";
 import type { OdrlPolicy, RequestContext } from "../odrl.js";
-import { ODRLD_DELEGATED_UNDER, parsePolicy } from "../odrl.js";
+import { ODRLD_DELEGATED_UNDER, ODRLD_REVOKED_POLICY, parsePolicy } from "../odrl.js";
 import {
   AAR_DECISION,
+  AAR_REQUEST_ACTION,
+  AAR_REQUEST_AGENT,
+  AAR_REQUEST_PURPOSE,
   AAR_REQUEST_TARGET,
   PROV_ACTED_ON_BEHALF_OF,
   PROV_HAD_PLAN,
@@ -65,13 +68,18 @@ export interface LoadedTrace {
   readonly credentialsByPolicy: ReadonlyMap<string, VerifiableCredential>;
   /** The recorded decisions (G9), for the recorded-vs-re-run divergence check. */
   readonly recordedDecisions: readonly RecordedDecision[];
+  /** The revoked policy IRIs the trace itself publishes (`revocations.ttl`, Phase C). */
+  readonly revokedPolicies: readonly string[];
   /** The root principal (the root policy's assigner). */
   readonly rootPrincipal?: string;
 }
 
-/** A minimal projection of a recorded decision record (G9). */
+/** A projection of a recorded decision record (G9) — the recorded request + verdict. */
 export interface RecordedDecision {
   readonly requestTarget?: string;
+  readonly requestAction?: string;
+  readonly requestPurpose?: string;
+  readonly requestAgent?: string;
   readonly decision: string;
 }
 
@@ -111,19 +119,6 @@ export async function loadTrace(source: ResourceSource, base: string): Promise<L
     }
   }
 
-  // The policy files → typed OdrlPolicy objects.
-  const policies = new Map<string, OdrlPolicy>();
-  for (const name of ["mandate.ttl", "agreement.ttl", "institute-internal.ttl"]) {
-    const res = await source.get(join(base, name));
-    if (res === undefined) {
-      continue;
-    }
-    const policy = await parsePolicy(res.body, res.contentType);
-    if (policy !== undefined && policy.id !== undefined) {
-      policies.set(policy.id, policy);
-    }
-  }
-
   // The credentials → keyed by the policy IRI each binds.
   const credentialsByPolicy = new Map<string, VerifiableCredential>();
   const credentialUrls = (await source.list(join(base, "credentials/"))) ?? [];
@@ -144,6 +139,31 @@ export async function loadTrace(source: ResourceSource, base: string): Promise<L
     }
   }
 
+  // Discover the bound policies GENERICALLY: each credential's `svc:policy` IRI
+  // dereferences to a policy document (the IRI minus its fragment) — no hard-coded
+  // filenames, so any chain shape / resource name audits.
+  const policies = new Map<string, OdrlPolicy>();
+  for (const policyIri of credentialsByPolicy.keys()) {
+    const docUrl = policyIri.split("#")[0] as string;
+    const res = await source.get(docUrl);
+    if (res === undefined) {
+      continue;
+    }
+    const policy = await parsePolicy(res.body, res.contentType);
+    if (policy?.id !== undefined) {
+      policies.set(policy.id, policy);
+    }
+  }
+
+  // Trace-published revocations (Phase C) — union'd into every re-run's revoked set.
+  const revokedPolicies: string[] = [];
+  const revocations = await readParsed(source, join(base, "revocations.ttl"));
+  if (revocations !== undefined) {
+    for (const q of revocations.getQuads(null, namedNode(ODRLD_REVOKED_POLICY), null, null)) {
+      revokedPolicies.push(q.object.value);
+    }
+  }
+
   // The recorded decisions (G9) → for the recorded-vs-re-run divergence check.
   const recordedDecisions: RecordedDecision[] = [];
   const decisionUrls = (await source.list(join(base, "decisions/"))) ?? [];
@@ -157,15 +177,18 @@ export async function loadTrace(source: ResourceSource, base: string): Promise<L
       continue;
     }
     const subject = decisionQuad.subject.value;
-    const requestTarget = store.getQuads(
-      namedNode(subject),
-      namedNode(AAR_REQUEST_TARGET),
-      null,
-      null,
-    )[0]?.object.value;
+    const one = (predicate: string): string | undefined =>
+      store.getQuads(namedNode(subject), namedNode(predicate), null, null)[0]?.object.value;
+    const requestTarget = one(AAR_REQUEST_TARGET);
+    const requestAction = one(AAR_REQUEST_ACTION);
+    const requestPurpose = one(AAR_REQUEST_PURPOSE);
+    const requestAgent = one(AAR_REQUEST_AGENT);
     recordedDecisions.push({
       decision: decisionQuad.object.value,
       ...(requestTarget !== undefined && { requestTarget }),
+      ...(requestAction !== undefined && { requestAction }),
+      ...(requestPurpose !== undefined && { requestPurpose }),
+      ...(requestAgent !== undefined && { requestAgent }),
     });
   }
 
@@ -187,6 +210,7 @@ export async function loadTrace(source: ResourceSource, base: string): Promise<L
     policies,
     credentialsByPolicy,
     recordedDecisions,
+    revokedPolicies,
     ...(rootPrincipal !== undefined && { rootPrincipal }),
   };
 }
@@ -384,9 +408,20 @@ export async function auditArtifact(
     .map((p) => p.id);
   const actorChain = actorChainIds.length === 1 ? presentedChain(trace, actorChainIds) : undefined;
 
-  const purpose = statedPurpose(leaf);
+  // Match the recorded decision for this use (by target) so the re-run reconstructs
+  // the ACTUAL recorded request — the action is NOT assumed to be `read` (a non-read
+  // action must not be falsely reported authorized just because read is permitted).
+  void leafAssignee;
+  const recorded =
+    trace.recordedDecisions.find((d) => d.requestTarget === used[0]) ??
+    (trace.recordedDecisions.length === 1 ? trace.recordedDecisions[0] : undefined);
+  const action = (recorded?.requestAction ?? "read") as RequestContext["action"];
+  const recordedPurpose = recorded?.requestPurpose ?? statedPurpose(leaf);
+  // Phase C consults BOTH the caller-supplied revoked set AND the trace's own
+  // published revocations (a revocation present in the trace is never skipped).
+  const revoked = [...new Set([...(options.revoked ?? []), ...trace.revokedPolicies])];
   const buildRequest = (usePurpose: string | undefined): RequestContext => ({
-    action: "read",
+    action,
     target: used[0] as string,
     ...(usePurpose !== undefined && {
       attributes: { purpose: usePurpose, dateTime: now.toISOString() },
@@ -394,22 +429,17 @@ export async function auditArtifact(
   });
 
   const reRun = await verifyAgentAuthority(primary, {
-    request: buildRequest(purpose),
+    request: buildRequest(recordedPurpose),
     rootPrincipal: trace.rootPrincipal,
     now,
     resolveKey: options.resolveKey,
     ...(options.isControlledBy !== undefined && { isControlledBy: options.isControlledBy }),
-    ...(options.revoked !== undefined && { revoked: options.revoked }),
+    revoked,
     actor: actingAgent,
     ...(actorChain !== undefined && { actorChain }),
   });
 
-  // Recorded-vs-re-run divergence (DESIGN §3.2 step 3): a mismatch is itself a
-  // finding. Match the decision record by target; fall back to the sole record.
-  void leafAssignee;
-  const recorded =
-    trace.recordedDecisions.find((d) => d.requestTarget === used[0]) ??
-    (trace.recordedDecisions.length === 1 ? trace.recordedDecisions[0] : undefined);
+  // Recorded-vs-re-run divergence (DESIGN §3.2 step 3): a mismatch is itself a finding.
   const reRunDecision = reRun.authorized ? "permit" : "deny";
   const divergence = recorded !== undefined ? recorded.decision !== reRunDecision : undefined;
 
@@ -421,7 +451,7 @@ export async function auditArtifact(
       now,
       resolveKey: options.resolveKey,
       ...(options.isControlledBy !== undefined && { isControlledBy: options.isControlledBy }),
-      ...(options.revoked !== undefined && { revoked: options.revoked }),
+      revoked,
       actor: actingAgent,
       ...(actorChain !== undefined && { actorChain }),
     });

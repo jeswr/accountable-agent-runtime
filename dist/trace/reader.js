@@ -17,8 +17,8 @@
 // PROV-omitting actor leaves), a recorded-vs-re-run divergence, and the breach.
 import { DataFactory, Store } from "n3";
 import { readBoundAuthorization, verifyAgentAuthority, } from "../chain-verifier/index.js";
-import { ODRLD_DELEGATED_UNDER, parsePolicy } from "../odrl.js";
-import { AAR_DECISION, AAR_REQUEST_TARGET, PROV_ACTED_ON_BEHALF_OF, PROV_HAD_PLAN, PROV_QUALIFIED_ASSOCIATION, PROV_STARTED_AT_TIME, PROV_USED, PROV_WAS_ASSOCIATED_WITH, PROV_WAS_ATTRIBUTED_TO, PROV_WAS_GENERATED_BY, } from "../vocab.js";
+import { ODRLD_DELEGATED_UNDER, ODRLD_REVOKED_POLICY, parsePolicy } from "../odrl.js";
+import { AAR_DECISION, AAR_REQUEST_ACTION, AAR_REQUEST_AGENT, AAR_REQUEST_PURPOSE, AAR_REQUEST_TARGET, PROV_ACTED_ON_BEHALF_OF, PROV_HAD_PLAN, PROV_QUALIFIED_ASSOCIATION, PROV_STARTED_AT_TIME, PROV_USED, PROV_WAS_ASSOCIATED_WITH, PROV_WAS_ATTRIBUTED_TO, PROV_WAS_GENERATED_BY, } from "../vocab.js";
 const { namedNode } = DataFactory;
 function join(base, path) {
     return base.endsWith("/") ? `${base}${path}` : `${base}/${path}`;
@@ -52,18 +52,6 @@ export async function loadTrace(source, base) {
             graph.addQuads(store.getQuads(null, null, null, null));
         }
     }
-    // The policy files → typed OdrlPolicy objects.
-    const policies = new Map();
-    for (const name of ["mandate.ttl", "agreement.ttl", "institute-internal.ttl"]) {
-        const res = await source.get(join(base, name));
-        if (res === undefined) {
-            continue;
-        }
-        const policy = await parsePolicy(res.body, res.contentType);
-        if (policy !== undefined && policy.id !== undefined) {
-            policies.set(policy.id, policy);
-        }
-    }
     // The credentials → keyed by the policy IRI each binds.
     const credentialsByPolicy = new Map();
     const credentialUrls = (await source.list(join(base, "credentials/"))) ?? [];
@@ -84,6 +72,29 @@ export async function loadTrace(source, base) {
             credentialsByPolicy.set(auth.policy, vc);
         }
     }
+    // Discover the bound policies GENERICALLY: each credential's `svc:policy` IRI
+    // dereferences to a policy document (the IRI minus its fragment) — no hard-coded
+    // filenames, so any chain shape / resource name audits.
+    const policies = new Map();
+    for (const policyIri of credentialsByPolicy.keys()) {
+        const docUrl = policyIri.split("#")[0];
+        const res = await source.get(docUrl);
+        if (res === undefined) {
+            continue;
+        }
+        const policy = await parsePolicy(res.body, res.contentType);
+        if (policy?.id !== undefined) {
+            policies.set(policy.id, policy);
+        }
+    }
+    // Trace-published revocations (Phase C) — union'd into every re-run's revoked set.
+    const revokedPolicies = [];
+    const revocations = await readParsed(source, join(base, "revocations.ttl"));
+    if (revocations !== undefined) {
+        for (const q of revocations.getQuads(null, namedNode(ODRLD_REVOKED_POLICY), null, null)) {
+            revokedPolicies.push(q.object.value);
+        }
+    }
     // The recorded decisions (G9) → for the recorded-vs-re-run divergence check.
     const recordedDecisions = [];
     const decisionUrls = (await source.list(join(base, "decisions/"))) ?? [];
@@ -97,10 +108,17 @@ export async function loadTrace(source, base) {
             continue;
         }
         const subject = decisionQuad.subject.value;
-        const requestTarget = store.getQuads(namedNode(subject), namedNode(AAR_REQUEST_TARGET), null, null)[0]?.object.value;
+        const one = (predicate) => store.getQuads(namedNode(subject), namedNode(predicate), null, null)[0]?.object.value;
+        const requestTarget = one(AAR_REQUEST_TARGET);
+        const requestAction = one(AAR_REQUEST_ACTION);
+        const requestPurpose = one(AAR_REQUEST_PURPOSE);
+        const requestAgent = one(AAR_REQUEST_AGENT);
         recordedDecisions.push({
             decision: decisionQuad.object.value,
             ...(requestTarget !== undefined && { requestTarget }),
+            ...(requestAction !== undefined && { requestAction }),
+            ...(requestPurpose !== undefined && { requestPurpose }),
+            ...(requestAgent !== undefined && { requestAgent }),
         });
     }
     // The root principal = the root policy's assigner (the policy no other is under).
@@ -120,6 +138,7 @@ export async function loadTrace(source, base) {
         policies,
         credentialsByPolicy,
         recordedDecisions,
+        revokedPolicies,
         ...(rootPrincipal !== undefined && { rootPrincipal }),
     };
 }
@@ -239,29 +258,35 @@ export async function auditArtifact(trace, artifact, options) {
         .filter((p) => p.delegatedUnder === undefined && p.assigner === onBehalfOf && p.id !== leafPolicy)
         .map((p) => p.id);
     const actorChain = actorChainIds.length === 1 ? presentedChain(trace, actorChainIds) : undefined;
-    const purpose = statedPurpose(leaf);
+    // Match the recorded decision for this use (by target) so the re-run reconstructs
+    // the ACTUAL recorded request — the action is NOT assumed to be `read` (a non-read
+    // action must not be falsely reported authorized just because read is permitted).
+    void leafAssignee;
+    const recorded = trace.recordedDecisions.find((d) => d.requestTarget === used[0]) ??
+        (trace.recordedDecisions.length === 1 ? trace.recordedDecisions[0] : undefined);
+    const action = (recorded?.requestAction ?? "read");
+    const recordedPurpose = recorded?.requestPurpose ?? statedPurpose(leaf);
+    // Phase C consults BOTH the caller-supplied revoked set AND the trace's own
+    // published revocations (a revocation present in the trace is never skipped).
+    const revoked = [...new Set([...(options.revoked ?? []), ...trace.revokedPolicies])];
     const buildRequest = (usePurpose) => ({
-        action: "read",
+        action,
         target: used[0],
         ...(usePurpose !== undefined && {
             attributes: { purpose: usePurpose, dateTime: now.toISOString() },
         }),
     });
     const reRun = await verifyAgentAuthority(primary, {
-        request: buildRequest(purpose),
+        request: buildRequest(recordedPurpose),
         rootPrincipal: trace.rootPrincipal,
         now,
         resolveKey: options.resolveKey,
         ...(options.isControlledBy !== undefined && { isControlledBy: options.isControlledBy }),
-        ...(options.revoked !== undefined && { revoked: options.revoked }),
+        revoked,
         actor: actingAgent,
         ...(actorChain !== undefined && { actorChain }),
     });
-    // Recorded-vs-re-run divergence (DESIGN §3.2 step 3): a mismatch is itself a
-    // finding. Match the decision record by target; fall back to the sole record.
-    void leafAssignee;
-    const recorded = trace.recordedDecisions.find((d) => d.requestTarget === used[0]) ??
-        (trace.recordedDecisions.length === 1 ? trace.recordedDecisions[0] : undefined);
+    // Recorded-vs-re-run divergence (DESIGN §3.2 step 3): a mismatch is itself a finding.
     const reRunDecision = reRun.authorized ? "permit" : "deny";
     const divergence = recorded !== undefined ? recorded.decision !== reRunDecision : undefined;
     let dispute;
@@ -272,7 +297,7 @@ export async function auditArtifact(trace, artifact, options) {
             now,
             resolveKey: options.resolveKey,
             ...(options.isControlledBy !== undefined && { isControlledBy: options.isControlledBy }),
-            ...(options.revoked !== undefined && { revoked: options.revoked }),
+            revoked,
             actor: actingAgent,
             ...(actorChain !== undefined && { actorChain }),
         });
