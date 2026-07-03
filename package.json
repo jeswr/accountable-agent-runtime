@@ -1,0 +1,47 @@
+{
+  "name": "@jeswr/accountable-agent-runtime",
+  "version": "0.1.0",
+  "description": "Reference accountable-agent runtime — the Accountable Web of Agents §4 scenario made executable: a delegated agent negotiates, acts, and leaves a verifiable on-pod accountability trace. Composes @jeswr/solid-vc + solid-agent-card + solid-a2a + solid-odrl (agent-delegation profile) and adds the composed four-phase chain verifier (G7).",
+  "type": "module",
+  "license": "MIT",
+  "author": "Jesse Wright",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jeswr/accountable-agent-runtime.git"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md", "docs", "BUILD-PLAN.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check:dist": "node scripts/check-dist-fresh.mjs",
+    "check:lockfile-transport": "node scripts/check-lockfile-transport.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "biome check src test scripts && npm run check:lockfile-transport",
+    "lint:fix": "biome check --write src test scripts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepare": "npm run build"
+  },
+  "dependencies": {
+    "@jeswr/fetch-rdf": "^0.1.0",
+    "@jeswr/solid-a2a": "git+https://github.com/jeswr/solid-a2a.git#51ca252c63db03e1b6b087c940b839a99b2ee762",
+    "@jeswr/solid-agent-card": "git+https://github.com/jeswr/solid-agent-card.git#26ce9bb6b44a019595fc58ad4afaa3c0e6a60014",
+    "@jeswr/solid-odrl": "git+https://github.com/jeswr/solid-odrl.git#18df183564e86d144da1ee874706750f441d0c70",
+    "@jeswr/solid-vc": "git+https://github.com/jeswr/solid-vc.git#895136830208b5b1aba7db2941307e03371e1d6d",
+    "@rdfjs/wrapper": "^0.34.0",
+    "n3": "^2.0.3"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.0.0",
+    "@rdfjs/types": "^2.0.1",
+    "@types/n3": "^1.21.1",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.2.6"
+  }
+}
