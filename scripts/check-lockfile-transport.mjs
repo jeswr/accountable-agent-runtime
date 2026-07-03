@@ -34,10 +34,11 @@ const SKIP_DIRS = new Set([
   ".turbo",
 ]);
 
-// The forbidden transports. hosted-git-info rewrites to `git+ssh://git@github`
-// or the scp-like `ssh://git@github`; match both. (We only flag GitHub here,
-// which is where every @jeswr github: dep lives — the #78 surface.)
-const FORBIDDEN = [/git\+ssh:\/\/git@github/, /(^|["@/])ssh:\/\/git@github/];
+// The forbidden transports. hosted-git-info rewrites to `git+ssh://git@github`,
+// the scp-like `ssh://git@github`, OR the bare scp form `git@github.com:owner/repo`
+// — all three require an SSH key, so all three break `npm ci`. (We only flag
+// GitHub here, which is where every @jeswr github: dep lives — the #78 surface.)
+const FORBIDDEN = [/git\+ssh:\/\/git@github/, /(^|["@/])ssh:\/\/git@github/, /git@github\.com:/];
 
 /** Recursively collect every package-lock.json under `dir` (skipping SKIP_DIRS). */
 function findLockfiles(dir, acc) {
