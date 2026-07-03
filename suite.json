@@ -1,8 +1,8 @@
 {
   "name": "accountable-agent-runtime",
-  "kind": "design",
-  "status": "design",
-  "description": "Reference accountable-agent runtime (design-only): composes solid-agent-card + solid-a2a + solid-odrl (agent-delegation profile) + solid-vc + the agent-authz credential note into the Accountable Web of Agents vision paper's §4 worked scenario, made executable — a delegated agent acts and leaves a verifiable on-pod accountability trace; includes the composed four-phase chain verifier and the M1–M4 API gap list (G1–G15).",
+  "kind": "library",
+  "status": "phase-0",
+  "description": "Reference accountable-agent runtime: composes solid-agent-card + solid-a2a + solid-odrl (agent-delegation profile) + solid-vc + the agent-authz credential note into the Accountable Web of Agents vision paper's §4 worked scenario, made executable. Phase 0 SHIPPED — the whole flow runs as a deterministic, golden-master-tested script over test doubles with REAL crypto; exports the composed four-phase chain verifier (G7 + the D9 identity-composition rule), the trace writer/reader (the auditor's mechanical walk), and the scripted scenario. Tracks the M1–M4 API gap list (G1–G15).",
   "dependsOn": [
     "solid-agent-card",
     "solid-a2a",
