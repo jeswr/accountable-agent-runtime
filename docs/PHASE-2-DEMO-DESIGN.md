@@ -100,7 +100,11 @@ additions a live pod needs (records, inboxes, status list) and an **explicit ACL
   keys                        the sec:Multikey verification-method document [public read]
   status/list                 Alice's signed Bitstring Status List VC       [public read — relying parties poll it]
   data/records.ttl            the selected records                          [owner Control; + acl:Read <agent-r WebID> AFTER step 6 — the grant IS the demo]
-  inbox/                      LDN inbox                                     [owner Read/Write/Control; acl:Append for agent-a + agent-r]
+  inbox/                      LDN inbox                                     [owner Read/Write/Control; acl:Read for AGENT A
+                                                                             (accessTo + default — A is Alice's delegated
+                                                                             inbox processor, §3.4; read-not-write: it mirrors
+                                                                             into the trace, it cannot edit the inbox);
+                                                                             acl:Append for agent-r (the only sender here)]
   agents/engagements/e1/      the trace container (mandate.ttl, agreement.ttl,
                               credentials/, chain.prov.ttl, decisions/,
                               activities/, revocations.ttl)                 [owner Control; acl:Write for AGENT A via BOTH
@@ -280,7 +284,8 @@ new vocabulary):
 
 **(a) The A2A handshake carrier** (agent A ↔ agent R): `UpgradeOffer`, `UpgradeResponse`, the
 SHACL-validated intents, and the concluded-agreement pointer. Sender POSTs to the peer's inbox;
-receiver polls its own inbox (it owns it; `acl:Read` is the owner's).
+receiver polls its own inbox (it owns it; `acl:Read` is the owner's — plus, for Alice's inbox,
+her delegated processor agent A, per the §1.4 grant).
 
 **(b) The accountability notification** (agent R → Alice): after each activity bundle lands in
 the institute's trace, R POSTs an announcement to Alice's inbox — "the owner's unpollable copy"
