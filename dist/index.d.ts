@@ -37,6 +37,8 @@
  */
 export type { BoundAuthorization, PresentedChain, VerifierErrorCode, VerifierPhase, VerifyAuthorityOptions, VerifyAuthorityResult, } from "@jeswr/agent-authz-verifier";
 export { PHASE_A_CODES, readBoundAuthorization, verifyAgentAuthority, } from "@jeswr/agent-authz-verifier";
+export type { AclModes, AclRule, ActorBases, ActorCredentials, ActorSession, BootCssOptions, CssServer, DiscoveryFetchOptions, LiveActor, LiveActorId, LiveCast, LivePodOptions, LiveSubstrate, SeededAccount, SeedOptions, } from "./live/index.js";
+export { actorBasesFor, ancestorContainers, assertBaseTransport, bootCss, buildAclDocument, buildCast, createActorSession, createActorSessions, createDiscoveryFetch, createInteractiveActorSession, isLoopbackBase, isLoopbackHost, LivePod, LivePodError, ownerRule, parentContainer, parseAclLink, seedAccount, seedDemo, } from "./live/index.js";
 export type { ActiveDuty, DelegatedEvaluationResult, OdrlConstraint, OdrlDuty, OdrlPolicy, OdrlRule, RequestContext, } from "./odrl.js";
 export { delegationProvenance, evaluateDelegated } from "./odrl.js";
 export type { ActorKey, RunScenarioOptions, ScenarioResult, WacGrant } from "./scenario/index.js";

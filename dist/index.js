@@ -37,6 +37,7 @@
  * @packageDocumentation
  */
 export { PHASE_A_CODES, readBoundAuthorization, verifyAgentAuthority, } from "@jeswr/agent-authz-verifier";
+export { actorBasesFor, ancestorContainers, assertBaseTransport, bootCss, buildAclDocument, buildCast, createActorSession, createActorSessions, createDiscoveryFetch, createInteractiveActorSession, isLoopbackBase, isLoopbackHost, LivePod, LivePodError, ownerRule, parentContainer, parseAclLink, seedAccount, seedDemo, } from "./live/index.js";
 export { delegationProvenance, evaluateDelegated } from "./odrl.js";
 export { buildAgreement, buildInstituteInternal, buildMandate, buildReadRequest, buildRuntimeProtocolDocument, CAST, generateActorKey, InMemoryPod, MANDATE_STATUS_INDEX, podKeyResolver, podStatusResolver, publishActorKey, RUNTIME_PROTOCOL_ID, runScenario, ScenarioRefusal, VALID_FROM, VALID_UNTIL, } from "./scenario/index.js";
 export { actionProvenance, auditArtifact, decisionRecordQuads, loadTrace, writeActivity, writeDecision, writeEngagement, } from "./trace/index.js";
