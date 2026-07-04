@@ -262,6 +262,19 @@ describe("readInbox", () => {
     const fetch = fakeFetch({});
     expect(await readInbox({ fetch, inbox, allowedObjectOrigins: [R_ORIGIN] })).toEqual([]);
   });
+
+  it("a child that REDIRECTS is skipped, not fatal — the valid notification still returns", async () => {
+    const twoChildren = `@prefix ldp: <http://www.w3.org/ns/ldp#> .
+<${inbox}> a ldp:Container ; ldp:contains <${inbox}n1>, <${inbox}bad> .`;
+    const fetch = fakeFetch({
+      [`GET ${inbox}`]: { status: 200, body: twoChildren, contentType: "text/turtle" },
+      [`GET ${inbox}n1`]: { status: 200, body: envelope(), contentType: "application/ld+json" },
+      [`GET ${inbox}bad`]: { status: 302, location: "https://evil.example/" },
+    });
+    const notes = await readInbox({ fetch, inbox, allowedObjectOrigins: [R_ORIGIN] });
+    expect(notes).toHaveLength(1);
+    expect(notes[0]?.id).toBe(`${inbox}n1`);
+  });
 });
 
 describe("dereferenceAnnouncedObject", () => {
