@@ -30,6 +30,9 @@
   "dependencies": {
     "@jeswr/agent-authz-verifier": "github:jeswr/agent-authz-verifier#e153710a9082373c6709373ca4d9aa40500c7aa3",
     "@jeswr/fetch-rdf": "^0.1.0",
+    "@jeswr/guarded-fetch": "github:jeswr/guarded-fetch#bd4490927fd36d62f6b78a0021e8d40bbb572c3b",
+    "@jeswr/solid-dpop": "github:jeswr/solid-dpop#2bc52bb45d8be70b878f7a5d49082f656c6a3b4f",
+    "@solid/object": "^0.6.0",
     "@jeswr/solid-a2a": "git+https://github.com/jeswr/solid-a2a.git#e5ff315c2c4c44eb1d83679c22da95696f3ba8b7",
     "@jeswr/solid-agent-card": "git+https://github.com/jeswr/solid-agent-card.git#c94b78e85a606fc96f5e2bea6a2204699dc23e96",
     "@jeswr/solid-odrl": "git+https://github.com/jeswr/solid-odrl.git#db97922d82f2ec016b7ef705827cf85429458668",

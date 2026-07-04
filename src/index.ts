@@ -52,6 +52,46 @@ export {
   readBoundAuthorization,
   verifyAgentAuthority,
 } from "@jeswr/agent-authz-verifier";
+// Wave-1 live substrate (Phase 2, T1–T3): the real-HTTP adapters (LivePod, loopback
+// guarded fetch, per-actor DPoP auth, CSS boot + seeding + the parameterised cast) that
+// swap the in-memory pod double for a live Solid pod WITHOUT changing any scenario logic.
+export type {
+  AclModes,
+  AclRule,
+  ActorBases,
+  ActorCredentials,
+  ActorSession,
+  BootCssOptions,
+  CssServer,
+  DiscoveryFetchOptions,
+  LiveActor,
+  LiveActorId,
+  LiveCast,
+  LivePodOptions,
+  LiveSubstrate,
+  SeededAccount,
+  SeedOptions,
+} from "./live/index.js";
+export {
+  actorBasesFor,
+  ancestorContainers,
+  assertBaseTransport,
+  bootCss,
+  buildAclDocument,
+  buildCast,
+  createActorSession,
+  createActorSessions,
+  createDiscoveryFetch,
+  createInteractiveActorSession,
+  isLoopbackBase,
+  isLoopbackHost,
+  LivePod,
+  LivePodError,
+  ownerRule,
+  parseAclLink,
+  seedAccount,
+  seedDemo,
+} from "./live/index.js";
 // The ODRL delegation-profile surface (the G10 seam) + the runtime's RDF helpers,
 // re-exported so consumers of the runtime need not import the seam directly.
 export type {
@@ -64,7 +104,6 @@ export type {
   RequestContext,
 } from "./odrl.js";
 export { delegationProvenance, evaluateDelegated } from "./odrl.js";
-
 // The scripted §4 scenario over the in-memory pod double.
 export type { ActorKey, RunScenarioOptions, ScenarioResult, WacGrant } from "./scenario/index.js";
 export {
