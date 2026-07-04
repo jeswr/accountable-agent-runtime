@@ -7,5 +7,5 @@ export declare const RUNTIME_PROTOCOL_ID: "https://institute.example/protocols/d
  * SHACL-validated against. Deterministic: the same logical document yields the
  * same `hash` across runs (content-addressed).
  */
-export declare function buildRuntimeProtocolDocument(): ProtocolDocument;
+export declare function buildRuntimeProtocolDocument(): Promise<ProtocolDocument>;
 //# sourceMappingURL=protocol.d.ts.map

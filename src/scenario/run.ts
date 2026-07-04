@@ -120,7 +120,7 @@ export async function runScenario(options: RunScenarioOptions = {}): Promise<Sce
   pod.put(CAST.agentRDoc, await agentDescription.toTurtle(), "text/turtle");
 
   // The runtime's hash-pinned Protocol Document.
-  const pd = buildRuntimeProtocolDocument();
+  const pd = await buildRuntimeProtocolDocument();
   pod.put(RUNTIME_PROTOCOL_ID, await pd.toTurtle(), "text/turtle");
 
   // --- Step 1: the mandate + the credentials -------------------------------
