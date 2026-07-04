@@ -83,6 +83,24 @@ exports[`the four-phase chain verifier — golden-master decision matrix > GOLDE
     "phase": "C",
     "provisional": false,
   },
+  "status-list-unreachable": {
+    "authorized": false,
+    "code": "STATUS_RETRIEVAL_ERROR",
+    "phase": "C",
+    "provisional": false,
+  },
+  "status-resolver-missing": {
+    "authorized": false,
+    "code": "STATUS_RETRIEVAL_ERROR",
+    "phase": "C",
+    "provisional": false,
+  },
+  "status-revoked": {
+    "authorized": false,
+    "code": "REVOKED",
+    "phase": "C",
+    "provisional": false,
+  },
   "status-unreachable": {
     "authorized": false,
     "code": "STATUS_RETRIEVAL_ERROR",

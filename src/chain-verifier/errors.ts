@@ -42,9 +42,15 @@ export type VerifierErrorCode =
   // `relatedResource` digest (solid-vc `RELATED_RESOURCE_MISMATCH`), or the
   // credential carries NO digest for a presented policy (`RELATED_RESOURCE_MISSING`).
   | "POLICY_INTEGRITY"
-  // Phase C
+  // Phase C — status ∪ revocation (REAL since Phase 1: the W3C Bitstring Status
+  // List gate runs through solid-vc's `resolveStatus` seam, fail-closed; the
+  // `odrld:Revocation` set remains the delegation-profile's POLICY-level
+  // revocation input, a distinct mechanism, not a stub)
   | "STATUS_RETRIEVAL_ERROR"
   | "REVOKED"
+  // the runtime's Bitstring `suspension` purpose mapping (a suspended credential
+  // is denied like a revoked one, but the code preserves the distinct semantics)
+  | "SUSPENDED"
   // Phase D
   | "POLICY_DENIED"
   // composition (D9)
@@ -71,4 +77,17 @@ export const PHASE_A_CODES = new Set<VerifierErrorCode>([
 export const RELATED_RESOURCE_CODES: ReadonlySet<string> = new Set([
   "RELATED_RESOURCE_MISSING",
   "RELATED_RESOURCE_MISMATCH",
+]);
+
+/**
+ * The `@jeswr/solid-vc` codes of the G2 Bitstring Status List gate (raised by the
+ * `resolveStatus` option of `verifyCredential`). The composed verifier maps each to
+ * its Phase-C deny: `STATUS_REVOKED` → `REVOKED`, `STATUS_SUSPENDED` → `SUSPENDED`,
+ * `STATUS_UNREACHABLE` → `STATUS_RETRIEVAL_ERROR` (the note's "retrieval failure
+ * must deny" fail-closed rule).
+ */
+export const STATUS_GATE_CODES: ReadonlySet<string> = new Set([
+  "STATUS_REVOKED",
+  "STATUS_SUSPENDED",
+  "STATUS_UNREACHABLE",
 ]);

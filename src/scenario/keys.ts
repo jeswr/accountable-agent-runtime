@@ -23,10 +23,12 @@
 // create a FRESH resolver (call {@link podKeyResolver} again) to observe the change.
 
 import {
+  createBitstringStatusResolver,
   createWebIdKeyResolver,
   generateKeyPairForSuite,
   type KeyPair,
   publishVerificationMethod,
+  type VerifyCredentialOptions,
   type WebIdKeyResolver,
 } from "@jeswr/solid-vc";
 import type { Quad } from "@rdfjs/types";
@@ -105,4 +107,26 @@ export async function publishActorKey(
  */
 export function podKeyResolver(pod: InMemoryPod): WebIdKeyResolver {
   return createWebIdKeyResolver({ fetch: pod.fetch });
+}
+
+/**
+ * The CREDENTIAL-STATUS resolver (G2, the read side) over the pod's fetch —
+ * solid-vc's `createBitstringStatusResolver` wired to a fresh document-resolving
+ * key pair (the hosted status list's OWN signature is verified through the same
+ * WebID-document seams). Pass as `resolveStatus` to `verifyAgentAuthority` /
+ * `verifyCredential`. `now` bounds the list credential's validity window (pass
+ * the single evaluation instant). Build a FRESH one after mutating the hosted
+ * list (the key resolver underneath caches documents).
+ */
+export function podStatusResolver(
+  pod: InMemoryPod,
+  options: { readonly now?: Date } = {},
+): NonNullable<VerifyCredentialOptions["resolveStatus"]> {
+  const keyResolver = podKeyResolver(pod);
+  return createBitstringStatusResolver({
+    resolveKey: keyResolver.resolveKey,
+    isControlledBy: keyResolver.isControlledBy,
+    fetch: pod.fetch,
+    ...(options.now !== undefined && { now: options.now }),
+  });
 }

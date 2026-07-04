@@ -4,10 +4,13 @@
 // deterministic run over the in-memory pod double with REAL crypto (D7). Every
 // package call is the real API. Phase 1 closed G1 (credentials digest-bind the
 // exact policy bytes; the verifier checks them fail-closed — the permit is no
-// longer policy-integrity-provisional), G8 (solid-odrl `actionProvenance`) and
-// G10 (the delegation profile is on solid-odrl main); the remaining labelled
-// stubs are G9 (provisional decision shape), G11 (the in-process carrier) and
-// G12 (no stock purpose/period shape).
+// longer policy-integrity-provisional), G2 (the mandate credential carries a
+// Bitstring Status List entry, the signed list is pod-hosted, and Phase C reads
+// the bit fail-closed), G4/G5 (keys publish into + resolve from the WebID
+// documents on the pod, both directions fail-closed), G8 (solid-odrl
+// `actionProvenance`) and G10 (the delegation profile is on solid-odrl main);
+// the remaining labelled stubs are G9 (provisional decision shape), G11 (the
+// in-process carrier) and G12 (no stock purpose/period shape).
 
 import {
   decodeUpgradeResponse,
@@ -21,7 +24,12 @@ import {
 import type { AgentDiscovery } from "@jeswr/solid-agent-card";
 import { buildAgentPointer, describeAgent, discoverAgent } from "@jeswr/solid-agent-card";
 import type { KeyPair, VerifiableCredential, WebIdKeyResolver } from "@jeswr/solid-vc";
-import { issueAgentAuthorization } from "@jeswr/solid-vc";
+import {
+  bitstringStatusListEntry,
+  buildBitstringStatusListCredential,
+  issue,
+  issueAgentAuthorization,
+} from "@jeswr/solid-vc";
 import {
   type PresentedChain,
   type VerifyAuthorityResult,
@@ -40,10 +48,11 @@ import {
   buildInstituteInternal,
   buildMandate,
   CAST,
+  MANDATE_STATUS_INDEX,
   VALID_FROM,
   VALID_UNTIL,
 } from "./cast.js";
-import { generateActorKey, podKeyResolver, publishActorKey } from "./keys.js";
+import { generateActorKey, podKeyResolver, podStatusResolver, publishActorKey } from "./keys.js";
 import { InMemoryPod } from "./pod.js";
 import { buildRuntimeProtocolDocument, RUNTIME_PROTOCOL_ID } from "./protocol.js";
 
@@ -77,6 +86,17 @@ export interface ScenarioResult {
     readonly alice: KeyPair;
     readonly agentA: KeyPair;
     readonly inst: KeyPair;
+  };
+  /**
+   * The hosted Bitstring status list (G2): its URL, the mandate credential's bit
+   * index, and the SIGNED list credential as issued (all bits clear). Variant
+   * tests flip the bit (`withStatusBit`), re-sign with `actorKeys.alice`, and
+   * re-host to exercise the revoked path.
+   */
+  readonly statusList: {
+    readonly url: string;
+    readonly index: number;
+    readonly credential: VerifiableCredential;
   };
   readonly now: Date;
   readonly discovery: AgentDiscovery;
@@ -168,6 +188,23 @@ export async function runScenario(options: RunScenarioOptions = {}): Promise<Sce
   const agreementTtl = await policyToTurtle(agreement);
   const instituteInternalTtl = await policyToTurtle(instituteInternal);
 
+  // G2 (Phase 1: REAL) — Alice hosts a signed W3C Bitstring Status List credential
+  // (all bits clear), and the mandate credential carries a `credentialStatus` entry
+  // pointing at it. The verifier's Phase-C gate fetches the list, verifies ITS
+  // signature through the same WebID-document key seams, and reads the bit —
+  // fail-closed (an unreachable/unverifiable list denies; a set bit revokes).
+  const statusListCredential = await issue({
+    credential: buildBitstringStatusListCredential({
+      id: CAST.statusListUrl,
+      issuer: CAST.alice,
+      statusPurpose: "revocation",
+      validFrom: VALID_FROM,
+      validUntil: VALID_UNTIL,
+    }),
+    key: aliceKey,
+  });
+  pod.put(CAST.statusListUrl, JSON.stringify(statusListCredential), "application/vc+ld+json");
+
   const mandateVc = await issueAgentAuthorization(
     {
       principal: CAST.alice,
@@ -178,6 +215,11 @@ export async function runScenario(options: RunScenarioOptions = {}): Promise<Sce
       policyContent: mandateTtl,
       validFrom: VALID_FROM,
       validUntil: VALID_UNTIL,
+      credentialStatus: bitstringStatusListEntry({
+        statusPurpose: "revocation",
+        statusListIndex: MANDATE_STATUS_INDEX,
+        statusListCredential: CAST.statusListUrl,
+      }),
     },
     aliceKey,
   );
@@ -284,6 +326,9 @@ export async function runScenario(options: RunScenarioOptions = {}): Promise<Sce
     now,
     resolveKey: keyResolver.resolveKey,
     isControlledBy: keyResolver.isControlledBy,
+    // G2 (real): the Bitstring status gate over the pod-hosted list, at the same
+    // single evaluation instant.
+    resolveStatus: podStatusResolver(pod, { now }),
     revoked: [],
     actor: CAST.agentR,
     actorChain,
@@ -362,6 +407,11 @@ export async function runScenario(options: RunScenarioOptions = {}): Promise<Sce
     pod,
     keyResolver,
     actorKeys: { alice: aliceKey, agentA: agentAKey, inst: instKey },
+    statusList: {
+      url: CAST.statusListUrl,
+      index: MANDATE_STATUS_INDEX,
+      credential: statusListCredential,
+    },
     now,
     discovery,
     protocolHash: pd.hash,

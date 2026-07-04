@@ -6,7 +6,12 @@
 // (a fail-open) is caught. Crypto is REAL (a forged signature actually fails to
 // verify); only the pod/clock are doubled.
 
-import { issueAgentAuthorization, type VerifiableCredential } from "@jeswr/solid-vc";
+import {
+  issue,
+  issueAgentAuthorization,
+  type VerifiableCredential,
+  withStatusBit,
+} from "@jeswr/solid-vc";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   type PresentedChain,
@@ -17,6 +22,7 @@ import type { OdrlPolicy, RequestContext } from "../src/odrl.js";
 import {
   generateActorKey,
   podKeyResolver,
+  podStatusResolver,
   publishActorKey,
   runScenario,
   type ScenarioResult,
@@ -51,6 +57,8 @@ async function verify(overrides: {
   actor?: string | undefined;
   actorChain?: PresentedChain | undefined;
   maxChainLength?: number;
+  /** `undefined` (with the key present) = NO status resolver — the fail-closed case. */
+  resolveStatus?: ReturnType<typeof podStatusResolver> | undefined;
 }): Promise<VerifyAuthorityResult> {
   // The default chains present the RAW issuance policy bytes (G1 enforced path).
   const primary: PresentedChain = overrides.primary ?? {
@@ -88,6 +96,12 @@ async function verify(overrides: {
     now: overrides.now ?? base.now,
     resolveKey: keyResolver.resolveKey,
     isControlledBy: keyResolver.isControlledBy,
+    // G2 real: a fresh Bitstring status resolver over the pod at the case's `now`
+    // — unless the case explicitly passes `resolveStatus: undefined` (the
+    // fail-closed missing-resolver row).
+    ...("resolveStatus" in overrides
+      ? overrides.resolveStatus !== undefined && { resolveStatus: overrides.resolveStatus }
+      : { resolveStatus: podStatusResolver(base.pod, { now: overrides.now ?? base.now }) }),
     revoked: overrides.revoked ?? [],
     ...(overrides.statusUnreachable !== undefined && {
       statusUnreachable: overrides.statusUnreachable,
@@ -105,6 +119,40 @@ async function verify(overrides: {
 beforeAll(async () => {
   base = await runScenario();
 });
+
+/**
+ * Run `fn` with the hosted status list REVOKING the mandate (bit set, re-signed
+ * by Alice, re-hosted), restoring the original list afterwards so the shared
+ * `base` pod is unchanged for other cases.
+ */
+async function withRevokedMandate<T>(fn: () => Promise<T>): Promise<T> {
+  const original = base.pod.get(base.statusList.url);
+  const revoked = await issue({
+    credential: withStatusBit(base.statusList.credential, base.statusList.index, true),
+    key: base.actorKeys.alice,
+  });
+  base.pod.put(base.statusList.url, JSON.stringify(revoked), "application/vc+ld+json");
+  try {
+    return await fn();
+  } finally {
+    if (original !== undefined) {
+      base.pod.put(base.statusList.url, original.body, original.contentType);
+    }
+  }
+}
+
+/** Run `fn` with the hosted status list DELETED (unreachable), then restore it. */
+async function withMissingStatusList<T>(fn: () => Promise<T>): Promise<T> {
+  const original = base.pod.get(base.statusList.url);
+  base.pod.delete(base.statusList.url);
+  try {
+    return await fn();
+  } finally {
+    if (original !== undefined) {
+      base.pod.put(base.statusList.url, original.body, original.contentType);
+    }
+  }
+}
 
 describe("the four-phase chain verifier — golden-master decision matrix", () => {
   it("HAPPY: the valid chain permits", async () => {
@@ -334,6 +382,53 @@ describe("the four-phase chain verifier — golden-master decision matrix", () =
     expect(r.code).toBe("STATUS_RETRIEVAL_ERROR");
   });
 
+  it("STATUS REVOKED (G2, enforced): the hosted Bitstring list has the mandate's bit SET → Phase C REVOKED", async () => {
+    const r = await withRevokedMandate(() => verify({}));
+    expect(r.authorized).toBe(false);
+    expect(r.phase).toBe("C");
+    expect(r.code).toBe("REVOKED");
+    // and with the original (all-clear) list restored, the same chain permits again
+    const again = await verify({});
+    expect(again.authorized).toBe(true);
+  });
+
+  it("STATUS LIST UNREACHABLE (G2, enforced): the hosted list 404s → Phase C STATUS_RETRIEVAL_ERROR (never a silent pass)", async () => {
+    const r = await withMissingStatusList(() => verify({}));
+    expect(r.authorized).toBe(false);
+    expect(r.phase).toBe("C");
+    expect(r.code).toBe("STATUS_RETRIEVAL_ERROR");
+  });
+
+  it("STATUS RESOLVER MISSING (G2, enforced): a status-carrying credential verified with NO resolver → Phase C STATUS_RETRIEVAL_ERROR (fail-closed)", async () => {
+    const r = await verify({ resolveStatus: undefined });
+    expect(r.authorized).toBe(false);
+    expect(r.phase).toBe("C");
+    expect(r.code).toBe("STATUS_RETRIEVAL_ERROR");
+  });
+
+  it("STATUS LIST FORGED (G2, enforced): a re-hosted list NOT signed by the credential's issuer → Phase C STATUS_RETRIEVAL_ERROR", async () => {
+    // An attacker re-hosts an all-clear list signed with THEIR OWN key (agent A's):
+    // the list's signature verifies against a published key, but the issuer is not
+    // the credential's issuer — the trust pin refuses it, fail-closed.
+    const original = base.pod.get(base.statusList.url);
+    const { proof: _proof, ...unsignedList } = base.statusList.credential;
+    const forged = await issue({
+      credential: { ...unsignedList, issuer: base.cast.agentA },
+      key: base.actorKeys.agentA,
+    });
+    base.pod.put(base.statusList.url, JSON.stringify(forged), "application/vc+ld+json");
+    try {
+      const r = await verify({});
+      expect(r.authorized).toBe(false);
+      expect(r.phase).toBe("C");
+      expect(r.code).toBe("STATUS_RETRIEVAL_ERROR");
+    } finally {
+      if (original !== undefined) {
+        base.pod.put(base.statusList.url, original.body, original.contentType);
+      }
+    }
+  });
+
   it("OUT OF SCOPE: the actual use falls outside the purpose → Phase D POLICY_DENIED", async () => {
     const r = await verify({
       request: {
@@ -466,7 +561,17 @@ describe("the four-phase chain verifier — golden-master decision matrix", () =
         [base.cast.agreementId]: { content: base.policyDocuments.agreement },
       },
     });
+    // G2 rows are computed FIRST and sequentially — they mutate + restore the
+    // shared pod's hosted status list, so they must not interleave with rows
+    // whose resolver would observe the mutated list.
+    const statusRevokedRow = await withRevokedMandate(() => verify({}));
+    const statusListUnreachableRow = await withMissingStatusList(() => verify({}));
+    const statusResolverMissingRow = await verify({ resolveStatus: undefined });
+
     const rows: Array<[string, Promise<VerifyAuthorityResult>]> = [
+      ["status-revoked", Promise.resolve(statusRevokedRow)],
+      ["status-list-unreachable", Promise.resolve(statusListUnreachableRow)],
+      ["status-resolver-missing", Promise.resolve(statusResolverMissingRow)],
       ["key-unresolvable", verify({ primary: keyDenyChain(ghostMandateVc) })],
       ["key-not-issuer-controlled", verify({ primary: keyDenyChain(crossSignedMandateVc) })],
       ["happy", verify({})],
