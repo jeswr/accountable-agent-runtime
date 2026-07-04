@@ -69,6 +69,10 @@ describe("the §4 scenario, end to end", () => {
     // Q3 — was it authorized, re-run at the action instant: yes, no divergence
     expect(audit.reRun?.authorized).toBe(true);
     expect(audit.divergence).toBe(false);
+    // G1 holds on the AUDIT path too: the reader presented the raw pod-fetched
+    // policy bytes and they digest-matched the signed relatedResource bindings —
+    // the independent re-run's permit is not provisional either.
+    expect(audit.reRun?.policyIntegrityProvisional).toBe(false);
   });
 
   it("the dispute: re-running Phase D with the ACTUAL (out-of-scope) use denies — a breach", async () => {
