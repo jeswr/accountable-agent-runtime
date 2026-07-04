@@ -15,6 +15,9 @@
       "import": "./dist/index.js"
     }
   },
+  "bin": {
+    "accountable-agent-runtime": "./dist/cli.js"
+  },
   "files": ["dist", "README.md", "docs", "BUILD-PLAN.md"],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -25,6 +28,7 @@
     "lint:fix": "biome check --write src test scripts",
     "test": "vitest run",
     "test:watch": "vitest",
+    "demo:live": "node dist/cli.js demo",
     "prepare": "npm run build"
   },
   "dependencies": {

@@ -37,7 +37,7 @@
  * @packageDocumentation
  */
 export { PHASE_A_CODES, readBoundAuthorization, verifyAgentAuthority, } from "@jeswr/agent-authz-verifier";
-export { actorBasesFor, ancestorContainers, assertBaseTransport, bootCss, buildAclDocument, buildCast, createActorSession, createActorSessions, createDiscoveryFetch, createInteractiveActorSession, isLoopbackBase, isLoopbackHost, LivePod, LivePodError, ownerRule, parentContainer, parseAclLink, seedAccount, seedDemo, } from "./live/index.js";
+export { AS2_CONTEXT, AUDIT_REPORT_SCHEMA, AuditUnwalkable, actorBasesFor, ancestorContainers, assertBaseTransport, auditLive, bootCss, buildAclDocument, buildCast, buildEnvelope, buildLiveAgreement, buildLiveInstituteInternal, buildLiveMandate, createActorSession, createActorSessions, createDiscoveryFetch, createInteractiveActorSession, dereferenceAnnouncedObject, discoverInbox, exitCodeFor, isLoopbackBase, isLoopbackHost, KNOWN_LDN_TYPES, LdnError, LivePod, LivePodError, LiveScenarioRefusal, liveKeyResolver, liveStatusResolver, ownerRule, parentContainer, parseAclLink, parseNotification, postNotification, readInbox, renderTranscript, runDemo, runLiveScenario, runNegativeActs, seedAccount, seedDemo, } from "./live/index.js";
 export { delegationProvenance, evaluateDelegated } from "./odrl.js";
 export { buildAgreement, buildInstituteInternal, buildMandate, buildReadRequest, buildRuntimeProtocolDocument, CAST, generateActorKey, InMemoryPod, MANDATE_STATUS_INDEX, podKeyResolver, podStatusResolver, publishActorKey, RUNTIME_PROTOCOL_ID, runScenario, ScenarioRefusal, VALID_FROM, VALID_UNTIL, } from "./scenario/index.js";
 export { actionProvenance, auditArtifact, decisionRecordQuads, loadTrace, writeActivity, writeDecision, writeEngagement, } from "./trace/index.js";

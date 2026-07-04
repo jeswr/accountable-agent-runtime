@@ -41,11 +41,21 @@ export declare class LivePod implements ResourceSink, ResourceSource {
     get scope(): string;
     /**
      * PUT a resource. Ensures ancestor containers exist first, then writes conditionally:
-     * `If-None-Match:*` for a first write (create-only), `If-Match:<etag>` for a known
-     * resource (lost-update guard). Refuses redirects; scope-guards the target with
-     * `allowRoot:false`.
+     * `If-None-Match:*` for a first write (create-only), `If-Match:<etag>` for a resource whose
+     * ETag this adapter has observed (lost-update guard). Refuses redirects; scope-guards the
+     * target with `allowRoot:false`.
+     *
+     * `options.overwrite` marks an INTENTIONAL overwrite of an existing resource (the demo's
+     * status-list re-host + revert): it sends `If-Match:*` — overwrite IFF the resource exists,
+     * failing closed (412) if it is absent. `If-Match:*` is used unconditionally in this mode
+     * (never a concrete tracked ETag), so it is robust to a server that returns a WEAK ETag on
+     * a prior read/write (some CSS representations, e.g. `application/ld+json`, do — and a weak
+     * validator fails the strong `If-Match` comparison RFC 9110 requires). The default (no
+     * `overwrite`) keeps the create-only `If-None-Match:*` / lost-update `If-Match:<etag>` guard.
      */
-    put(url: string, body: string, contentType: string): Promise<void>;
+    put(url: string, body: string, contentType: string, options?: {
+        readonly overwrite?: boolean;
+    }): Promise<void>;
     /** GET a resource; `undefined` on 404. Refuses redirects; keeps the ETag (fetch-rdf discipline). */
     get(url: string): Promise<StoredResource | undefined>;
     /**
