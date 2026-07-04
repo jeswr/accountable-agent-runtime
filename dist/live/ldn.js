@@ -284,7 +284,16 @@ export async function readInbox(options) {
     }
     const received = [];
     for (const iri of childIris) {
-        const doc = await getText(fetch, iri);
+        // Per-notification failures are NON-FATAL (untrusted-input discipline): a child that 404s,
+        // errors, or redirects is SKIPPED, never aborting the whole poll. (The container listing
+        // read itself still throws — being unable to read one's own inbox is a real error.)
+        let doc;
+        try {
+            doc = await getText(fetch, iri);
+        }
+        catch {
+            continue;
+        }
         if (doc === undefined) {
             continue;
         }
