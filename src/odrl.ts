@@ -5,25 +5,18 @@
 // ===========================================================================
 //
 // The whole runtime depends on the ODRL AGENT-DELEGATION PROFILE (`evaluateDelegated`
-// fail-closed chain walker, `delegationProvenance` PROV overlay, delegation-aware
-// `policyToTurtle`, the `odrld:`/`prov:` vocabulary). That surface lives on
-// `@jeswr/solid-odrl`'s `feat/delegation-profile` branch (@18df183) and is NOT yet
-// merged to `main` — gap **G10** in `docs/DESIGN.md` §4.
+// fail-closed chain walker, `delegationProvenance` PROV overlay, `actionProvenance`
+// per-action bundle emitter [G8, Phase 1], delegation-aware `policyToTurtle`, the
+// `odrld:`/`prov:` vocabulary). G10 is CLOSED: that surface is merged to
+// `@jeswr/solid-odrl` `main` (package.json pins the merged commit by exact sha;
+// committed `dist/`, so it installs under `ignore-scripts=true` with no build step).
 //
-// So the runtime routes EVERY delegation-profile call through THIS ONE module,
-// currently backed by that unmerged branch (pinned by exact sha in package.json —
-// `git+https://github.com/jeswr/solid-odrl.git#18df1835…`, committed `dist/`, so it
-// installs under `ignore-scripts=true` with no build step). The evaluator, its
-// fail-closed semantics and the decision-matrix teeth are the REAL package code —
-// nothing is faked; only the delivery channel (an unmerged branch behind a seam) is
-// provisional.
-//
-// PHASE 1 (BUILD-PLAN): once G10 merges `feat/delegation-profile` → `main` and cuts
-// the committed `dist/`, repoint package.json's `@jeswr/solid-odrl` to the merged
-// commit — this file is UNCHANGED (same import specifier). No other runtime module
-// imports `@jeswr/solid-odrl` directly, so the swap is a single dependency bump.
+// The runtime still routes EVERY delegation-profile call through THIS ONE module —
+// no other runtime module imports `@jeswr/solid-odrl` directly — so any future
+// dependency move is a single-file swap.
 
 export type {
+  ActionProvenanceInput,
   ActiveDuty,
   Decision,
   DecisionRule,
@@ -40,6 +33,8 @@ export type {
   RuleType,
 } from "@jeswr/solid-odrl";
 export {
+  actionProvenance,
+  actionProvenanceJsonLd,
   constraintSatisfied,
   DEFAULT_MAX_CHAIN_LENGTH,
   delegationProvenance,
