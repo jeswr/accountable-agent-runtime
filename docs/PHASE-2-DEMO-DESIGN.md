@@ -103,17 +103,23 @@ additions a live pod needs (records, inboxes, status list) and an **explicit ACL
   inbox/                      LDN inbox                                     [owner Read/Write/Control; acl:Append for agent-a + agent-r]
   agents/engagements/e1/      the trace container (mandate.ttl, agreement.ttl,
                               credentials/, chain.prov.ttl, decisions/,
-                              activities/, revocations.ttl)                 [owner Control; acl:Write (acl:default) for AGENT A —
-                                                                             Alice delegates trace authoring to her agent;
+                              activities/, revocations.ttl)                 [owner Control; acl:Write for AGENT A via BOTH
+                                                                             acl:accessTo <e1/> (create inside the container
+                                                                             itself) AND acl:default <e1/> (descendants incl.
+                                                                             the credentials/decisions/activities
+                                                                             subcontainers) — never acl:Control; Alice
+                                                                             delegates trace AUTHORING, not ACL authority;
                                                                              PUBLIC READ — see the auditor note]
 /agent-a/  profile/card + keys                                             [public read]  + inbox/ [Append for institute actors]
 /institute/
   profile/card + keys                                                      [public read]
   protocols/data-sharing.ttl  the hash-pinned Protocol Document             [public read]
-  agents/engagements/e1/      the MIRROR trace (institute's own copy)       [owner Control; acl:Write (acl:default) for AGENT R —
-                                                                             the institute delegates trace authoring to its
-                                                                             acting agent (the same delegation instAgentVc
-                                                                             attests); public read]
+  agents/engagements/e1/      the MIRROR trace (institute's own copy)       [owner Control; acl:Write for AGENT R via BOTH
+                                                                             acl:accessTo <e1/> AND acl:default <e1/> (same
+                                                                             container-vs-descendant split as Alice's trace;
+                                                                             never acl:Control) — the institute delegates
+                                                                             trace authoring to its acting agent (the same
+                                                                             delegation instAgentVc attests); public read]
   inbox/                      [Append for agent-a]
 /agent-r/  profile/card + keys                                             [public read]
 ```
@@ -340,9 +346,14 @@ A: POST Announce(agreement)       → R's inbox          R countersigns (mirrore
                                                         (R's session — its own copy, §2.5)
 [Alice's session materialises the WAC grant — step 6]
 R: acts (reads records), writes activity bundle + decision record → institute trace
-R: POST Announce(activity)        → Alice's inbox      Alice's copy: the harness (as Alice)
-                                                        dereferences and mirrors the bundle
-                                                        into /alice/…/activities/
+R: POST Announce(activity)        → Alice's inbox      Alice's copy: AGENT A's session (the ONE
+                                                        Alice-side trace writer, §2.5) polls the
+                                                        inbox, dereferences the announced bundle
+                                                        (guarded fetch, counterparty-origin-bound
+                                                        §3.3) and mirrors it into
+                                                        /alice/…/activities/ — Alice's own session
+                                                        is reserved for owner acts (ACL grant,
+                                                        revocation), never routine trace writes
 ```
 
 The carrier stays **runtime-local** (`live/ldn.ts`), per BUILD-PLAN Phase 2.2: extract a
