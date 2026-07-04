@@ -32,7 +32,7 @@
     "@jeswr/solid-a2a": "git+https://github.com/jeswr/solid-a2a.git#e5ff315c2c4c44eb1d83679c22da95696f3ba8b7",
     "@jeswr/solid-agent-card": "git+https://github.com/jeswr/solid-agent-card.git#c94b78e85a606fc96f5e2bea6a2204699dc23e96",
     "@jeswr/solid-odrl": "git+https://github.com/jeswr/solid-odrl.git#db97922d82f2ec016b7ef705827cf85429458668",
-    "@jeswr/solid-vc": "git+https://github.com/jeswr/solid-vc.git#45de2a142f1ca52091113cfb09154e699b0d0f9b",
+    "@jeswr/solid-vc": "git+https://github.com/jeswr/solid-vc.git#7f7a4e0a5ded7415ac40d63f2ff54077863df14e",
     "@rdfjs/wrapper": "^0.34.0",
     "n3": "^2.0.3"
   },
