@@ -2,10 +2,12 @@
 //
 // The scripted §4 scenario (SCENARIO steps 0–8) — the WHOLE flow as a pure,
 // deterministic run over the in-memory pod double with REAL crypto (D7). Every
-// package call is the real API; the only stubs are the labelled gaps (G1 policy
-// binding trusted-by-location, G8 local activity emitter, G9 provisional decision
-// shape, G10 the delegation seam, G11 the in-process carrier, G12 no stock
-// purpose/period shape).
+// package call is the real API. Phase 1 closed G1 (credentials digest-bind the
+// exact policy bytes; the verifier checks them fail-closed — the permit is no
+// longer policy-integrity-provisional), G8 (solid-odrl `actionProvenance`) and
+// G10 (the delegation profile is on solid-odrl main); the remaining labelled
+// stubs are G9 (provisional decision shape), G11 (the in-process carrier) and
+// G12 (no stock purpose/period shape).
 
 import {
   decodeUpgradeResponse,
@@ -76,6 +78,16 @@ export interface ScenarioResult {
     readonly agreement: VerifiableCredential;
     readonly instituteAgent: VerifiableCredential;
   };
+  /**
+   * The EXACT policy-document bytes each credential digest-binds (G1) — the same
+   * bytes hosted on the pod and presented to the verifier. Kept on the result so
+   * tests present the true issuance bytes, never a parse→re-emit.
+   */
+  readonly policyDocuments: {
+    readonly mandate: string;
+    readonly agreement: string;
+    readonly instituteInternal: string;
+  };
   readonly wacGrant: WacGrant;
   readonly writtenArtifacts: readonly WrittenArtifact[];
   readonly activityId: string;
@@ -128,6 +140,14 @@ export async function runScenario(options: RunScenarioOptions = {}): Promise<Sce
   const agreement = buildAgreement();
   const instituteInternal = buildInstituteInternal();
 
+  // G1 (Phase 1: REAL) — serialize each policy document ONCE. These exact bytes are
+  // (a) digest-bound into each credential's SIGNED `relatedResource` at issuance,
+  // (b) hosted on the pod, and (c) presented to the verifier as the raw document —
+  // never a parse→re-emit of the typed policy, which could silently drop triples.
+  const mandateTtl = await policyToTurtle(mandate);
+  const agreementTtl = await policyToTurtle(agreement);
+  const instituteInternalTtl = await policyToTurtle(instituteInternal);
+
   const mandateVc = await issueAgentAuthorization(
     {
       principal: CAST.alice,
@@ -135,6 +155,7 @@ export async function runScenario(options: RunScenarioOptions = {}): Promise<Sce
       action: ["read", "grantUse"],
       target: CAST.records,
       policy: CAST.mandateId,
+      policyContent: mandateTtl,
       validFrom: VALID_FROM,
       validUntil: VALID_UNTIL,
     },
@@ -147,6 +168,7 @@ export async function runScenario(options: RunScenarioOptions = {}): Promise<Sce
       action: "read",
       target: CAST.records,
       policy: CAST.agreementId,
+      policyContent: agreementTtl,
       validFrom: VALID_FROM,
       validUntil: VALID_UNTIL,
     },
@@ -159,6 +181,7 @@ export async function runScenario(options: RunScenarioOptions = {}): Promise<Sce
       action: "read",
       target: CAST.records,
       policy: CAST.instituteInternalId,
+      policyContent: instituteInternalTtl,
       validFrom: VALID_FROM,
       validUntil: VALID_UNTIL,
     },
@@ -222,10 +245,18 @@ export async function runScenario(options: RunScenarioOptions = {}): Promise<Sce
   const primaryChain: PresentedChain = {
     credentials: [mandateVc, agreementVc],
     policies: [mandate, agreement],
+    // The raw policy documents (the exact issuance bytes) — the G1 digest gate input.
+    policyContents: {
+      [CAST.mandateId]: { content: mandateTtl },
+      [CAST.agreementId]: { content: agreementTtl },
+    },
   };
   const actorChain: PresentedChain = {
     credentials: [instAgentVc],
     policies: [instituteInternal],
+    policyContents: {
+      [CAST.instituteInternalId]: { content: instituteInternalTtl },
+    },
   };
   const verification = await verifyAgentAuthority(primaryChain, {
     request,
@@ -270,11 +301,8 @@ export async function runScenario(options: RunScenarioOptions = {}): Promise<Sce
   // The institute-internal policy (the D9 second-chain root) is hosted at its IRI's
   // document URL (the institute's pod), so the auditor discovers it GENERICALLY from
   // the credential's svc:policy binding — no hard-coded trace filenames.
-  pod.put(
-    CAST.instituteInternalId.split("#")[0] as string,
-    await policyToTurtle(instituteInternal),
-    "text/turtle",
-  );
+  // Host the SAME bytes the credential digest-binds (issuance ≡ hosted ≡ presented).
+  pod.put(CAST.instituteInternalId.split("#")[0] as string, instituteInternalTtl, "text/turtle");
 
   const activityId = "act-1";
   const activityIri = `${CAST.engagementBase}activities/${activityId}.ttl#act`;
@@ -324,6 +352,11 @@ export async function runScenario(options: RunScenarioOptions = {}): Promise<Sce
     agreement,
     instituteInternal,
     credentials: { mandate: mandateVc, agreement: agreementVc, instituteAgent: instAgentVc },
+    policyDocuments: {
+      mandate: mandateTtl,
+      agreement: agreementTtl,
+      instituteInternal: instituteInternalTtl,
+    },
     wacGrant,
     writtenArtifacts,
     activityId,

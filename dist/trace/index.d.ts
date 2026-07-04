@@ -1,5 +1,5 @@
-export type { ActionProvenanceInput } from "./activity.js";
-export { actionProvenance } from "./activity.js";
+export type { ActionProvenanceInput } from "../odrl.js";
+export { actionProvenance } from "../odrl.js";
 export type { DecisionRecordInput, ParsedDecisionRecord } from "./decision-record.js";
 export { decisionRecordQuads } from "./decision-record.js";
 export type { AuditOptions, AuditReport, AuthorityLink, LoadedTrace, LoadTraceOptions, RecordedDecision, ResourceSource, StoredResource, } from "./reader.js";

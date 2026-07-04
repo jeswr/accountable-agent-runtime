@@ -103,6 +103,7 @@ export async function loadTrace(source, base, options = {}) {
     // dereferences to a policy document (the IRI minus its fragment) — no hard-coded
     // filenames, so any chain shape / resource name audits.
     const policies = new Map();
+    const policyContents = new Map();
     for (const policyIri of credentialsByPolicy.keys()) {
         const docUrl = safePolicyDocUrl(policyIri, options.isPolicyUrlAllowed);
         if (docUrl === undefined) {
@@ -116,6 +117,8 @@ export async function loadTrace(source, base, options = {}) {
         const policy = await parsePolicy(res.body, res.contentType, docUrl);
         if (policy?.id !== undefined) {
             policies.set(policy.id, policy);
+            // Keep the RAW fetched bytes for the G1 digest gate (never a re-emit).
+            policyContents.set(policy.id, { content: res.body, contentType: res.contentType });
         }
     }
     // Trace-published revocations (Phase C) — union'd into every re-run's revoked set.
@@ -167,6 +170,7 @@ export async function loadTrace(source, base, options = {}) {
         base,
         graph,
         policies,
+        policyContents,
         credentialsByPolicy,
         recordedDecisions,
         revokedPolicies,
@@ -214,6 +218,7 @@ function statedPurpose(policy) {
 function presentedChain(trace, policyIds) {
     const policies = [];
     const credentials = [];
+    const policyContents = {};
     for (const id of policyIds) {
         const policy = trace.policies.get(id);
         const vc = trace.credentialsByPolicy.get(id);
@@ -222,8 +227,14 @@ function presentedChain(trace, policyIds) {
         }
         policies.push(policy);
         credentials.push(vc);
+        // Present the RAW fetched document to the G1 digest gate (it is always present
+        // when the policy is — loadTrace records both from the same fetch).
+        const raw = trace.policyContents.get(id);
+        if (raw !== undefined) {
+            policyContents[id] = raw;
+        }
     }
-    return { policies, credentials };
+    return { policies, credentials, policyContents };
 }
 /**
  * Walk the trace for one derived artifact and answer the accountability questions,

@@ -18,10 +18,14 @@
  * verifier, the trace writer/reader, and the scripted scenario.
  *
  * The GAP LIST (G1–G15, DESIGN §4) is honoured with LABELLED stubs, never hidden
- * ones: G1 policy binding trusted-by-location, G8 a local activity-bundle emitter,
- * G9 a provisional decision-record shape, G10 the delegation seam (an unmerged
- * branch behind one import), G11 the in-process carrier, G12 no stock purpose/period
- * shape, G14 the WAC↔agreement linkage recorded in the decision record only.
+ * ones. CLOSED in Phase 1: G1 (policy-content digest binding — `solid-vc`
+ * `relatedResource` digests verified fail-closed via `presentedResources`; a
+ * fully content-bound chain's permit is no longer `policyIntegrityProvisional`),
+ * G8 (`actionProvenance` imported from `@jeswr/solid-odrl`), G10 (the delegation
+ * profile is merged to `solid-odrl` main). Still open, labelled: G9 a provisional
+ * decision-record shape, G11 the in-process carrier, G12 no stock purpose/period
+ * shape, G14 the WAC↔agreement linkage recorded in the decision record only,
+ * G15 countersigning (mirrored-credential pattern documented).
  *
  * @packageDocumentation
  */

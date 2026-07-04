@@ -9,10 +9,9 @@
 
 import type { VerifiableCredential } from "@jeswr/solid-vc";
 import type { Quad } from "@rdfjs/types";
-import type { OdrlPolicy } from "../odrl.js";
-import { delegationProvenance, policyToTurtle } from "../odrl.js";
+import type { ActionProvenanceInput, OdrlPolicy } from "../odrl.js";
+import { actionProvenance, delegationProvenance, policyToTurtle } from "../odrl.js";
 import { canonicalize, parseTurtle, serializeTurtle } from "../rdf.js";
-import { type ActionProvenanceInput, actionProvenance } from "./activity.js";
 import { type DecisionRecordInput, decisionRecordQuads } from "./decision-record.js";
 
 /** A minimal write sink — one resource `put`. Injectable (pod double / authed fetch). */

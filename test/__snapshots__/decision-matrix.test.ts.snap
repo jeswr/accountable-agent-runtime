@@ -5,55 +5,77 @@ exports[`the four-phase chain verifier — golden-master decision matrix > GOLDE
   "actor-is-leaf-assignee": {
     "authorized": true,
     "phase": "complete",
+    "provisional": false,
   },
   "binding-mismatch": {
     "authorized": false,
     "code": "BINDING_MISMATCH",
     "phase": "B",
+    "provisional": false,
+  },
+  "content-not-presented": {
+    "authorized": true,
+    "phase": "complete",
+    "provisional": true,
   },
   "expired": {
     "authorized": false,
     "code": "EXPIRED",
     "phase": "A",
+    "provisional": false,
   },
   "forged-hop": {
     "authorized": false,
     "code": "INVALID_SIGNATURE",
     "phase": "A",
+    "provisional": false,
   },
   "happy": {
     "authorized": true,
     "phase": "complete",
+    "provisional": false,
   },
   "identity-composition-missing": {
     "authorized": false,
     "code": "IDENTITY_COMPOSITION_FAILED",
     "phase": "composition",
+    "provisional": false,
   },
   "not-yet-valid": {
     "authorized": false,
     "code": "NOT_YET_VALID",
     "phase": "A",
+    "provisional": false,
   },
   "out-of-scope": {
     "authorized": false,
     "code": "POLICY_DENIED",
     "phase": "D",
+    "provisional": false,
   },
   "over-length": {
     "authorized": false,
     "code": "POLICY_DENIED",
     "phase": "D",
+    "provisional": false,
+  },
+  "policy-substituted": {
+    "authorized": false,
+    "code": "POLICY_INTEGRITY",
+    "phase": "B",
+    "provisional": false,
   },
   "revoked": {
     "authorized": false,
     "code": "REVOKED",
     "phase": "C",
+    "provisional": false,
   },
   "status-unreachable": {
     "authorized": false,
     "code": "STATUS_RETRIEVAL_ERROR",
     "phase": "C",
+    "provisional": false,
   },
 }
 `;

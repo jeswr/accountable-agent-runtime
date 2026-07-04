@@ -1,4 +1,4 @@
-import type { VerifiableCredential, VerifyCredentialOptions } from "@jeswr/solid-vc";
+import type { PresentedResourceContent, VerifiableCredential, VerifyCredentialOptions } from "@jeswr/solid-vc";
 import type { ActiveDuty, DelegatedEvaluationResult, OdrlPolicy, RequestContext } from "../odrl.js";
 import { type VerifierErrorCode, type VerifierPhase } from "./errors.js";
 /** The bound agent-authorization claim read from an AgentAuthorizationCredential. */
@@ -15,16 +15,26 @@ export interface BoundAuthorization {
     readonly policy?: string;
 }
 /**
- * A presented delegation chain: the AgentAuthorizationCredentials (any order) plus
- * the ODRL policies they bind. Phase 0/1 resolves each credential's `svc:policy`
- * IRI to the pod-fetched policy content — TRUSTED BY LOCATION (G1: `solid-vc` binds
- * only a bare policy IRI today, which the note flags as binding nothing
- * cryptographically; a permit therefore carries the `POLICY_INTEGRITY`-provisional
- * marker until the embedded/digest binding lands).
+ * A presented delegation chain: the AgentAuthorizationCredentials (any order), the
+ * ODRL policies they bind, and — the G1 policy-content binding — the RAW policy
+ * documents, keyed by the policy IRI each credential binds (`svc:policy`).
+ *
+ * `policyContents` MUST be the raw FETCHED document bytes (Turtle by default), NOT a
+ * re-serialisation of the parsed {@link OdrlPolicy} — a lossy parse→re-emit can drop
+ * triples the issuer signed over, silently breaking (or, worse, laundering) the
+ * digest. When a hop's content is present, `verifyCredential` recomputes its
+ * RDFC-1.0 canonical digest and compares it against the credential's SIGNED
+ * `relatedResource` `digestMultibase`, fail-closed (`POLICY_INTEGRITY` deny on a
+ * missing digest or a mismatch). When every hop's content is presented and passes,
+ * the permit's `policyIntegrityProvisional` is `false`; a hop presented WITHOUT
+ * content falls back to the trusted-by-location reading and keeps the honest
+ * provisional marker.
  */
 export interface PresentedChain {
     readonly credentials: readonly VerifiableCredential[];
     readonly policies: readonly OdrlPolicy[];
+    /** RAW fetched policy-document content by policy IRI (the G1 digest gate input). */
+    readonly policyContents?: Readonly<Record<string, PresentedResourceContent>>;
 }
 /** Options for {@link verifyAgentAuthority}. */
 export interface VerifyAuthorityOptions {
@@ -87,9 +97,11 @@ export interface VerifyAuthorityResult {
     /** The aggregate duties the permit is contingent on. */
     readonly duties: readonly ActiveDuty[];
     /**
-     * `true` when the permit rests on the G1 trusted-by-location policy binding (a
-     * bare-IRI `svc:policy`, cryptographically un-bound). Honest provisional marker;
-     * flips to `false` once `solid-vc` embeds/digests the policy (Phase 1, G1).
+     * `true` when the permit (still) rests on a trusted-by-location policy binding
+     * for at least one hop — i.e. that hop's raw policy content was NOT presented in
+     * {@link PresentedChain.policyContents}, so its signed `relatedResource` digest
+     * (if any) could not be checked. `false` IFF every hop of this chain AND of the
+     * identity-composition chain (when one ran) passed the G1 content-digest gate.
      */
     readonly policyIntegrityProvisional: boolean;
 }

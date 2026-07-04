@@ -13,7 +13,11 @@
 //   assembly — extract each credential's bound policy, order the chain root-first
 //              by `odrld:delegatedUnder`; reject cycles / branches / gaps.
 //   Phase A  — `solid-vc.verifyCredential` on every credential at ONE instant
-//              (`now`): signature, cryptosuite, validity window, proof purpose.
+//              (`now`): signature, cryptosuite, validity window, proof purpose —
+//              plus the G1 policy-content digest gate (`presentedResources`): the
+//              presented raw policy document must match the credential's SIGNED
+//              `relatedResource` digest, fail-closed (a pure digest failure is
+//              surfaced as a Phase-B `POLICY_INTEGRITY` deny).
 //   Phase B  — cross-binding: each hop's credential is issued by (and self-asserts
 //              a subject of) that hop's `odrl:assigner`; the delegate it authorizes
 //              is the NEXT hop's assigner; the ROOT credential's issuer is the
@@ -34,7 +38,7 @@
 import { verifyCredential } from "@jeswr/solid-vc";
 import { evaluateDelegated } from "../odrl.js";
 import { SVC_ACTION, SVC_AUTHORIZES, SVC_POLICY, SVC_TARGET } from "../vocab.js";
-import { PHASE_A_CODES } from "./errors.js";
+import { PHASE_A_CODES, RELATED_RESOURCE_CODES, } from "./errors.js";
 // --- reading the bound authorization from a credential ---------------------
 /** The credentialSubject as a claim record (first subject if an array). */
 function subjectRecord(vc) {
@@ -212,23 +216,40 @@ export async function verifyAgentAuthority(chain, options) {
             return deny("B", "BINDING_MISMATCH", `Chain hop <${p.id}> has no binding credential.`, chainIds);
         }
     }
-    // --- Phase A: every credential, one instant ------------------------------
-    for (const vc of chain.credentials) {
-        const res = await verifyCredential(vc, {
+    // --- Phase A: every credential, one instant (+ the G1 content-digest gate) --
+    // Each hop's credential is verified WITH its presented policy content (when the
+    // chain carries it): solid-vc recomputes the RDFC-1.0 canonical digest of the raw
+    // document and compares it to the credential's SIGNED `relatedResource`
+    // `digestMultibase`, fail-closed — a substituted/mutated policy behind the
+    // (mutable) `svc:policy` IRI can no longer verify.
+    const contents = chain.policyContents ?? {};
+    for (const hop of ordered) {
+        // biome-ignore lint/style/noNonNullAssertion: every hop bound (checked above)
+        const b = bound.get(hop.id);
+        const presented = contents[hop.id];
+        const res = await verifyCredential(b.vc, {
             resolveKey,
             ...(options.isControlledBy !== undefined && { isControlledBy: options.isControlledBy }),
             expectedProofPurpose: "assertionMethod",
             now,
+            ...(presented !== undefined && { presentedResources: { [hop.id]: presented } }),
         });
         if (!res.verified) {
-            const first = res.errors[0];
-            const code = first !== undefined && PHASE_A_CODES.has(first.code)
-                ? first.code
-                : "INVALID_SIGNATURE";
             const detail = res.errors.map((e) => e.message).join("; ");
+            // A genuine Phase-A failure (signature/validity/issuer/…) always wins; a
+            // PURE digest-binding failure is the G1 `POLICY_INTEGRITY` deny (Phase B
+            // semantics — the credential↔policy-content cross-binding broke).
+            const phaseAError = res.errors.find((e) => PHASE_A_CODES.has(e.code));
+            if (phaseAError === undefined && res.errors.some((e) => RELATED_RESOURCE_CODES.has(e.code))) {
+                return deny("B", "POLICY_INTEGRITY", `Policy-content binding failed for <${hop.id}>: ${detail}`, chainIds);
+            }
+            const code = phaseAError !== undefined ? phaseAError.code : "INVALID_SIGNATURE";
             return deny("A", code, `Phase A (credential verification) failed: ${detail}`, chainIds);
         }
     }
+    // The permit is fully content-bound (non-provisional) only when EVERY hop's raw
+    // policy content was presented — and therefore digest-checked above, fail-closed.
+    const allContentBound = ordered.every((p) => contents[p.id] !== undefined);
     // --- Phase B: cross-binding ----------------------------------------------
     // biome-ignore lint/style/noNonNullAssertion: ordered non-empty (assembly)
     const rootHop = ordered[0];
@@ -355,9 +376,10 @@ export async function verifyAgentAuthority(chain, options) {
         decision,
         ...(actorResult !== undefined && { actorResult }),
         duties: decision.duties,
-        // G1: the permit rests on a trusted-by-location policy binding until solid-vc
-        // embeds/digests the policy content — honest provisional marker.
-        policyIntegrityProvisional: true,
+        // G1 (Phase 1: REAL) — `false` only when every hop of THIS chain and of the
+        // identity-composition chain (when one ran) was content-digest-verified above;
+        // any hop presented without raw content keeps the honest provisional marker.
+        policyIntegrityProvisional: !allContentBound || (actorResult?.policyIntegrityProvisional ?? false),
     };
 }
 //# sourceMappingURL=verifier.js.map

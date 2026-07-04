@@ -22,8 +22,11 @@ describe("the §4 scenario, end to end", () => {
     // the D9 second chain (rooted at the leaf assignee) authorized the acting agent
     expect(r.verification.actorResult?.authorized).toBe(true);
     expect(r.verification.actorResult?.chainPolicyIds).toEqual([r.cast.instituteInternalId]);
-    // the permit rests on the G1 trusted-by-location policy binding (honest marker)
-    expect(r.verification.policyIntegrityProvisional).toBe(true);
+    // G1 CLOSED (Phase 1): every hop (primary + identity-composition chain) was
+    // content-digest-verified against its credential's signed relatedResource —
+    // the permit no longer rests on trusted-by-location policy binding.
+    expect(r.verification.policyIntegrityProvisional).toBe(false);
+    expect(r.verification.actorResult?.policyIntegrityProvisional).toBe(false);
   });
 
   it("lays down the full trace container (DESIGN §3.1)", async () => {
@@ -66,6 +69,10 @@ describe("the §4 scenario, end to end", () => {
     // Q3 — was it authorized, re-run at the action instant: yes, no divergence
     expect(audit.reRun?.authorized).toBe(true);
     expect(audit.divergence).toBe(false);
+    // G1 holds on the AUDIT path too: the reader presented the raw pod-fetched
+    // policy bytes and they digest-matched the signed relatedResource bindings —
+    // the independent re-run's permit is not provisional either.
+    expect(audit.reRun?.policyIntegrityProvisional).toBe(false);
   });
 
   it("the dispute: re-running Phase D with the ACTUAL (out-of-scope) use denies — a breach", async () => {

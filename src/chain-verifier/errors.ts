@@ -37,8 +37,10 @@ export type VerifierErrorCode =
   | "UNTRUSTED_ISSUER"
   // Phase B
   | "BINDING_MISMATCH"
-  // Phase B — provisional (G1: bare-IRI policy binding; the note rejects it, so a
-  // permit carries this marker until solid-vc gains embedded/digest policy binding)
+  // Phase B — the G1 policy-content binding gate (REAL since Phase 1): the presented
+  // policy content's canonical digest did not match the credential's signed
+  // `relatedResource` digest (solid-vc `RELATED_RESOURCE_MISMATCH`), or the
+  // credential carries NO digest for a presented policy (`RELATED_RESOURCE_MISSING`).
   | "POLICY_INTEGRITY"
   // Phase C
   | "STATUS_RETRIEVAL_ERROR"
@@ -59,4 +61,14 @@ export const PHASE_A_CODES = new Set<VerifierErrorCode>([
   "ISSUER_MISMATCH",
   "PROOF_PURPOSE_MISMATCH",
   "UNTRUSTED_ISSUER",
+]);
+
+/**
+ * The `@jeswr/solid-vc` codes of the G1 policy-content digest gate (raised by the
+ * `presentedResources` option of `verifyCredential`). The composed verifier maps
+ * either to a `POLICY_INTEGRITY` deny — the credential↔policy-content binding broke.
+ */
+export const RELATED_RESOURCE_CODES: ReadonlySet<string> = new Set([
+  "RELATED_RESOURCE_MISSING",
+  "RELATED_RESOURCE_MISMATCH",
 ]);
