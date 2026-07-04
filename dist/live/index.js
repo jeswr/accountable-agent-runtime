@@ -9,6 +9,6 @@ export { createActorSession, createActorSessions, createInteractiveActorSession,
 export { actorBasesFor, buildCast, MANDATE_STATUS_INDEX, MISUSE_PURPOSE, PURPOSE, VALID_FROM, VALID_UNTIL, } from "./cast.js";
 export { bootCss } from "./css.js";
 export { assertBaseTransport, createDiscoveryFetch, isLoopbackBase, isLoopbackHost, } from "./fetch.js";
-export { ancestorContainers, LivePod, LivePodError, parseAclLink } from "./pod.js";
+export { ancestorContainers, LivePod, LivePodError, parentContainer, parseAclLink, } from "./pod.js";
 export { seedDemo } from "./seed.js";
 //# sourceMappingURL=index.js.map

@@ -32,6 +32,7 @@ import {
   type FetchLike,
   type SolidSessionState,
 } from "@jeswr/solid-dpop";
+import { assertBaseTransport } from "./fetch.js";
 
 /** A live actor's identity + the client-credentials that authenticate it. */
 export interface ActorCredentials {
@@ -121,6 +122,9 @@ function actorFetch(state: SolidSessionState, creds: ClientCredentials): typeof 
  * actor's WebID + a redirect-refusing authed `fetch`.
  */
 export async function createActorSession(actor: ActorCredentials): Promise<ActorSession> {
+  // Fail closed BEFORE the token exchange: a non-loopback http: issuer would carry the
+  // client-credentials Basic header + DPoP token over plaintext. Refuse it (roborev High).
+  assertBaseTransport(actor.credentials.issuer);
   const state = await createSession(actor.credentials, noFollowFetch);
   return { webId: actor.webId, fetch: actorFetch(state, actor.credentials), state };
 }

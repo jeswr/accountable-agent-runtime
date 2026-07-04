@@ -71,7 +71,7 @@ export declare class LivePod implements ResourceSink, ResourceSource {
      * with the LDP container type. A concurrent-create 412/409 is tolerated (already exists).
      */
     ensureContainer(url: string): Promise<void>;
-    /** Create every ancestor container of `target` that lies strictly under the base. */
+    /** Ensure `target`'s parent container chain exists (up to, but never including, the base). */
     private ensureAncestors;
     private assertNoRedirect;
     private rememberEtag;
@@ -82,6 +82,12 @@ export declare class LivePod implements ResourceSink, ResourceSource {
  * base `…/alice/`, target `…/alice/a/b/x.ttl` → [`…/alice/a/`, `…/alice/a/b/`].
  */
 export declare function ancestorContainers(base: string, target: string): string[];
+/**
+ * The container that directly holds `url` (a resource or a container). For a resource
+ * `…/a/b/x.ttl` → `…/a/b/`; for a container `…/a/b/c/` → `…/a/b/`. Query/fragment are
+ * dropped. A root-path input returns itself (`…/`).
+ */
+export declare function parentContainer(url: string): string;
 /**
  * Extract the `acl` relation target from an HTTP `Link` header. Returns the raw (possibly
  * relative) reference from the FIRST `rel="acl"` entry, or `undefined`. Deliberately small

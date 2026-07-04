@@ -25,6 +25,7 @@
 // documented seam for the later "maintainer's real WebID" variant (§7); it is a STUB
 // here ({@link createInteractiveActorSession}) — reserved, not built.
 import { authedFetch, createSession, } from "@jeswr/solid-dpop";
+import { assertBaseTransport } from "./fetch.js";
 /** The transport for the credentialed path: refuse redirects (never chase a `Location`). */
 const noFollowFetch = (input, init) => globalThis.fetch(input, {
     method: init?.method,
@@ -87,6 +88,9 @@ function actorFetch(state, creds) {
  * actor's WebID + a redirect-refusing authed `fetch`.
  */
 export async function createActorSession(actor) {
+    // Fail closed BEFORE the token exchange: a non-loopback http: issuer would carry the
+    // client-credentials Basic header + DPoP token over plaintext. Refuse it (roborev High).
+    assertBaseTransport(actor.credentials.issuer);
     const state = await createSession(actor.credentials, noFollowFetch);
     return { webId: actor.webId, fetch: actorFetch(state, actor.credentials), state };
 }

@@ -88,6 +88,7 @@ export {
   LivePod,
   LivePodError,
   ownerRule,
+  parentContainer,
   parseAclLink,
   seedAccount,
   seedDemo,

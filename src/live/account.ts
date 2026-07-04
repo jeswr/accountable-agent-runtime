@@ -9,6 +9,7 @@
 // live only in process memory — this module NEVER logs them and never writes them to disk.
 
 import type { ClientCredentials } from "@jeswr/solid-dpop";
+import { assertBaseTransport } from "./fetch.js";
 
 /** A provisioned actor account. */
 export interface SeededAccount {
@@ -72,6 +73,12 @@ export async function seedAccount(
   pod: string,
   options: { readonly webId?: string; readonly email?: string; readonly password?: string } = {},
 ): Promise<SeededAccount> {
+  // Fail closed BEFORE any account/password/client-credential POST: refuse a plaintext
+  // http: base to a non-loopback host (which would leak the generated password + client
+  // secret over the wire). https-public and http-loopback are permitted; everything else
+  // throws. This mirrors the discovery fetch's transport gate so the credentialed setup
+  // path is held to the same posture (roborev High).
+  assertBaseTransport(base);
   const root = base.endsWith("/") ? base.slice(0, -1) : base;
   const podRoot = `${root}/${pod}/`;
   const webId = options.webId ?? `${podRoot}profile/card#me`;

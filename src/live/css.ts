@@ -119,11 +119,23 @@ export async function bootCss(options: BootCssOptions = {}): Promise<CssServer> 
       child.kill("SIGTERM");
     }
   };
-  // Orphan-proofing: kill the child if THIS process goes away.
+  // Orphan-proofing: kill the child if THIS process goes away. The `exit` handler only
+  // reaps the child (the process is already terminating). The SIGINT/SIGTERM handlers must
+  // ALSO restore default termination — installing a handler suppresses Node's default
+  // exit-on-signal, so after reaping the child they re-exit with the conventional
+  // 128+signal code; otherwise the first Ctrl-C would leave the parent running (roborev Low).
   const onExit = (): void => killChild();
+  const onSigint = (): void => {
+    killChild();
+    process.exit(130); // 128 + SIGINT(2)
+  };
+  const onSigterm = (): void => {
+    killChild();
+    process.exit(143); // 128 + SIGTERM(15)
+  };
   process.once("exit", onExit);
-  process.once("SIGINT", onExit);
-  process.once("SIGTERM", onExit);
+  process.once("SIGINT", onSigint);
+  process.once("SIGTERM", onSigterm);
 
   const childExit = once(child, "exit");
   // If the child dies before readiness, surface that instead of hanging to the deadline.
@@ -136,8 +148,8 @@ export async function bootCss(options: BootCssOptions = {}): Promise<CssServer> 
   const stop = async (): Promise<void> => {
     stopped = true;
     process.removeListener("exit", onExit);
-    process.removeListener("SIGINT", onExit);
-    process.removeListener("SIGTERM", onExit);
+    process.removeListener("SIGINT", onSigint);
+    process.removeListener("SIGTERM", onSigterm);
     killChild();
     if (child.exitCode === null && child.signalCode === null) {
       await once(child, "exit").catch(() => undefined);

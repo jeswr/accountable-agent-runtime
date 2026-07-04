@@ -34,6 +34,12 @@ export {
   isLoopbackHost,
 } from "./fetch.js";
 export type { LivePodOptions } from "./pod.js";
-export { ancestorContainers, LivePod, LivePodError, parseAclLink } from "./pod.js";
+export {
+  ancestorContainers,
+  LivePod,
+  LivePodError,
+  parentContainer,
+  parseAclLink,
+} from "./pod.js";
 export type { LiveSubstrate, SeedOptions } from "./seed.js";
 export { seedDemo } from "./seed.js";

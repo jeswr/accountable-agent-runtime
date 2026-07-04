@@ -7,6 +7,7 @@
 //
 // SECRET DISCIPLINE: the returned `{id, secret}` are handed straight to the auth layer and
 // live only in process memory — this module NEVER logs them and never writes them to disk.
+import { assertBaseTransport } from "./fetch.js";
 /** POST JSON with the account-session cookie jar; throws on a non-2xx (with the body). */
 async function jsonPost(url, body, jar) {
     const headers = { "content-type": "application/json" };
@@ -35,6 +36,12 @@ async function jsonPost(url, body, jar) {
  * default `<base>/<pod>/profile/card#me`.
  */
 export async function seedAccount(base, pod, options = {}) {
+    // Fail closed BEFORE any account/password/client-credential POST: refuse a plaintext
+    // http: base to a non-loopback host (which would leak the generated password + client
+    // secret over the wire). https-public and http-loopback are permitted; everything else
+    // throws. This mirrors the discovery fetch's transport gate so the credentialed setup
+    // path is held to the same posture (roborev High).
+    assertBaseTransport(base);
     const root = base.endsWith("/") ? base.slice(0, -1) : base;
     const podRoot = `${root}/${pod}/`;
     const webId = options.webId ?? `${podRoot}profile/card#me`;

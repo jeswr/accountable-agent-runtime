@@ -13,12 +13,15 @@ import {
   assertBaseTransport,
   buildAclDocument,
   buildCast,
+  createActorSession,
   createDiscoveryFetch,
   createInteractiveActorSession,
   isLoopbackBase,
   isLoopbackHost,
   ownerRule,
+  parentContainer,
   parseAclLink,
+  seedAccount,
 } from "../src/live/index.js";
 
 describe("loopback transport gate", () => {
@@ -70,6 +73,37 @@ describe("parseAclLink", () => {
     expect(parseAclLink('<x>; rel="type"')).toBeUndefined();
     expect(parseAclLink("garbage")).toBeUndefined();
     expect(parseAclLink("")).toBeUndefined();
+  });
+});
+
+describe("credentialed setup paths fail closed on a plaintext-public base (roborev High)", () => {
+  it("seedAccount refuses http-to-public BEFORE any account/password POST", async () => {
+    // Throws synchronously from the transport gate — no network request is ever issued.
+    await expect(seedAccount("http://pod.example.com", "alice")).rejects.toBeInstanceOf(SsrfError);
+  });
+
+  it("createActorSession refuses a non-loopback http: issuer BEFORE the token exchange", async () => {
+    await expect(
+      createActorSession({
+        webId: "http://pod.example.com/alice/profile/card#me",
+        credentials: { issuer: "http://pod.example.com/", id: "id", secret: "sh" },
+      }),
+    ).rejects.toBeInstanceOf(SsrfError);
+  });
+
+  it("permits an https-public base/issuer at the transport gate (network then handles it)", () => {
+    // The gate itself must NOT reject https — only the (absent) server would.
+    expect(assertBaseTransport("https://pod.example.com")).toEqual({ loopback: false });
+  });
+});
+
+describe("parentContainer", () => {
+  it("returns the holding container of a resource or a container", () => {
+    expect(parentContainer("https://p.example/a/b/x.ttl")).toBe("https://p.example/a/b/");
+    expect(parentContainer("https://p.example/a/b/c/")).toBe("https://p.example/a/b/");
+    expect(parentContainer("https://p.example/a/")).toBe("https://p.example/");
+    // query/fragment are dropped.
+    expect(parentContainer("https://p.example/a/x.ttl?q=1#f")).toBe("https://p.example/a/");
   });
 });
 

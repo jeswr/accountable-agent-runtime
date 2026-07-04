@@ -264,6 +264,16 @@ export class LivePod implements ResourceSink, ResourceSource {
     if (this.ensured.has(target)) {
       return;
     }
+    // The pod/container ROOT is assumed to already exist (a seeded pod). Stop the ancestor
+    // recursion here — we never create or clobber the base.
+    if (target === this.base) {
+      this.ensured.add(target);
+      return;
+    }
+    // Create the PARENT chain first (shallowest-first, via recursion), so a create below can
+    // never 409 merely because an ancestor was missing.
+    await this.ensureContainer(parentContainer(target));
+
     const head = await this.fetchImpl(target, { method: "GET", redirect: "manual" });
     this.assertNoRedirect(head, "GET", target);
     if (head.ok) {
@@ -283,21 +293,35 @@ export class LivePod implements ResourceSink, ResourceSource {
       redirect: "manual",
     });
     this.assertNoRedirect(created, "PUT", target);
-    // 412/409: a concurrent create won the race — the container exists, which is the goal.
-    if (!created.ok && created.status !== 412 && created.status !== 409) {
-      throw new LivePodError(`create container ${target} → ${created.status}`, {
-        status: created.status,
-      });
+    if (created.ok) {
+      this.ensured.add(target);
+      return;
     }
-    this.ensured.add(target);
+    // A 409/412 can mean "a concurrent create won the race" (container now exists) OR a REAL
+    // conflict (ancestor still missing, a non-container at the path, …). Never mark ensured on
+    // the status alone — RE-PROBE and require a 200 before trusting it (roborev Medium).
+    if (created.status === 409 || created.status === 412) {
+      const reprobe = await this.fetchImpl(target, { method: "GET", redirect: "manual" });
+      this.assertNoRedirect(reprobe, "GET", target);
+      if (reprobe.ok) {
+        this.ensured.add(target);
+        return;
+      }
+    }
+    throw new LivePodError(`create container ${target} → ${created.status}`, {
+      status: created.status,
+    });
   }
 
   // --- internals ----------------------------------------------------------
 
-  /** Create every ancestor container of `target` that lies strictly under the base. */
+  /** Ensure `target`'s parent container chain exists (up to, but never including, the base). */
   private async ensureAncestors(target: string): Promise<void> {
-    for (const container of ancestorContainers(this.base, target)) {
-      await this.ensureContainer(container);
+    const parent = parentContainer(target);
+    // Only recurse when the parent is genuinely within scope (a resource directly under the
+    // base has the base as parent — ensureContainer stops there).
+    if (podScopedUrl(this.base, parent, { allowRoot: true }) !== undefined) {
+      await this.ensureContainer(parent);
     }
   }
 
@@ -342,6 +366,21 @@ export function ancestorContainers(base: string, target: string): string[] {
     containers.push(acc);
   }
   return containers;
+}
+
+/**
+ * The container that directly holds `url` (a resource or a container). For a resource
+ * `…/a/b/x.ttl` → `…/a/b/`; for a container `…/a/b/c/` → `…/a/b/`. Query/fragment are
+ * dropped. A root-path input returns itself (`…/`).
+ */
+export function parentContainer(url: string): string {
+  const parsed = new URL(url);
+  parsed.search = "";
+  parsed.hash = "";
+  const path = parsed.pathname.endsWith("/") ? parsed.pathname.slice(0, -1) : parsed.pathname;
+  const lastSlash = path.lastIndexOf("/");
+  parsed.pathname = lastSlash >= 0 ? path.slice(0, lastSlash + 1) : "/";
+  return parsed.toString();
 }
 
 /**
