@@ -17,30 +17,8 @@
 // its own ephemeral in-process credentials). Unknown flags fail fast with usage.
 import process from "node:process";
 import { AuditUnwalkable, auditLive, renderTranscript, } from "./live/audit.js";
+import { AUDIT_FLAGS, DEMO_FLAGS, parseArgs, validateFlags } from "./live/cli-args.js";
 import { runDemo } from "./live/demo.js";
-/** Parse `--flag value` / `--flag` (boolean) options + positional args from argv. */
-function parseArgs(argv) {
-    const positionals = [];
-    const flags = new Map();
-    for (let i = 0; i < argv.length; i += 1) {
-        const arg = argv[i];
-        if (arg.startsWith("--")) {
-            const name = arg.slice(2);
-            const next = argv[i + 1];
-            if (next !== undefined && !next.startsWith("--")) {
-                flags.set(name, next);
-                i += 1;
-            }
-            else {
-                flags.set(name, true);
-            }
-        }
-        else {
-            positionals.push(arg);
-        }
-    }
-    return { positionals, flags };
-}
 const USAGE = `accountable-agent-runtime — the Accountable Web of Agents §4 demo + auditor
 
 Usage:
@@ -57,6 +35,11 @@ async function runAudit(positionals, flags) {
     const artifact = positionals[0];
     if (artifact === undefined) {
         process.stderr.write(`audit: missing <artifact-iri>\n\n${USAGE}\n`);
+        return 2;
+    }
+    const flagError = validateFlags("audit", flags, AUDIT_FLAGS);
+    if (flagError !== undefined) {
+        process.stderr.write(`${flagError}\n\n${USAGE}\n`);
         return 2;
     }
     const stringFlag = (name) => {
@@ -104,6 +87,11 @@ async function runAudit(positionals, flags) {
     return result.exitCode;
 }
 async function runDemoCommand(flags) {
+    const flagError = validateFlags("demo", flags, DEMO_FLAGS);
+    if (flagError !== undefined) {
+        process.stderr.write(`${flagError}\n\n${USAGE}\n`);
+        return 2;
+    }
     const stringFlag = (name) => {
         const v = flags.get(name);
         return typeof v === "string" ? v : undefined;

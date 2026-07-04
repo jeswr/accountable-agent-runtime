@@ -19,7 +19,7 @@ import type { Quad } from "@rdfjs/types";
 import { DataFactory, Store } from "n3";
 import { parseTurtle } from "../rdf.js";
 import { type AuditReport, auditArtifact, loadTrace } from "../trace/index.js";
-import { PROV_WAS_GENERATED_BY } from "../vocab.js";
+import { PROV_STARTED_AT_TIME, PROV_WAS_GENERATED_BY } from "../vocab.js";
 import { createDiscoveryFetch } from "./fetch.js";
 import { LivePod, LivePodError } from "./pod.js";
 import { liveKeyResolver, liveStatusResolver } from "./resolvers.js";
@@ -153,12 +153,29 @@ export async function auditLive(options: AuditLiveOptions): Promise<AuditLiveRes
         }
       },
     });
+    // Evaluate the status-list credential's validity at the SAME instant `auditArtifact`
+    // re-runs authorization at — the activity's start instant — NOT wall-clock time (roborev
+    // Medium). Otherwise a trace whose action instant differs from "now" (an old/future trace,
+    // or a status list with a narrow validity window) could be judged against the wrong
+    // temporal context. `options.at` remains the explicit override.
+    const activity = trace.graph.getQuads(
+      namedNode(options.artifact),
+      namedNode(PROV_WAS_GENERATED_BY),
+      null,
+      null,
+    )[0]?.object.value;
+    const startedAt =
+      activity !== undefined
+        ? trace.graph.getQuads(namedNode(activity), namedNode(PROV_STARTED_AT_TIME), null, null)[0]
+            ?.object.value
+        : undefined;
+    const statusInstant = options.at ?? (startedAt !== undefined ? new Date(startedAt) : undefined);
     report = await auditArtifact(trace, options.artifact, {
       resolveKey: keyResolver.resolveKey,
       isControlledBy: keyResolver.isControlledBy,
       resolveStatus: liveStatusResolver(
         discoveryFetch,
-        options.at !== undefined ? { now: options.at } : {},
+        statusInstant !== undefined ? { now: statusInstant } : {},
       ),
       ...(options.revoked !== undefined && { revoked: options.revoked }),
       ...(options.actualUsePurpose !== undefined && {

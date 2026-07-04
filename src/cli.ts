@@ -23,32 +23,8 @@ import {
   auditLive,
   renderTranscript,
 } from "./live/audit.js";
+import { AUDIT_FLAGS, DEMO_FLAGS, parseArgs, validateFlags } from "./live/cli-args.js";
 import { runDemo } from "./live/demo.js";
-
-/** Parse `--flag value` / `--flag` (boolean) options + positional args from argv. */
-function parseArgs(argv: readonly string[]): {
-  positionals: string[];
-  flags: Map<string, string | true>;
-} {
-  const positionals: string[] = [];
-  const flags = new Map<string, string | true>();
-  for (let i = 0; i < argv.length; i += 1) {
-    const arg = argv[i] as string;
-    if (arg.startsWith("--")) {
-      const name = arg.slice(2);
-      const next = argv[i + 1];
-      if (next !== undefined && !next.startsWith("--")) {
-        flags.set(name, next);
-        i += 1;
-      } else {
-        flags.set(name, true);
-      }
-    } else {
-      positionals.push(arg);
-    }
-  }
-  return { positionals, flags };
-}
 
 const USAGE = `accountable-agent-runtime — the Accountable Web of Agents §4 demo + auditor
 
@@ -71,6 +47,11 @@ async function runAudit(
   const artifact = positionals[0];
   if (artifact === undefined) {
     process.stderr.write(`audit: missing <artifact-iri>\n\n${USAGE}\n`);
+    return 2;
+  }
+  const flagError = validateFlags("audit", flags, AUDIT_FLAGS);
+  if (flagError !== undefined) {
+    process.stderr.write(`${flagError}\n\n${USAGE}\n`);
     return 2;
   }
   const stringFlag = (name: string): string | undefined => {
@@ -115,6 +96,11 @@ async function runAudit(
 }
 
 async function runDemoCommand(flags: Map<string, string | true>): Promise<number> {
+  const flagError = validateFlags("demo", flags, DEMO_FLAGS);
+  if (flagError !== undefined) {
+    process.stderr.write(`${flagError}\n\n${USAGE}\n`);
+    return 2;
+  }
   const stringFlag = (name: string): string | undefined => {
     const v = flags.get(name);
     return typeof v === "string" ? v : undefined;
