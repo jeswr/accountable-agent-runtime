@@ -3,7 +3,16 @@ import type { ActiveDuty, DelegatedEvaluationResult, OdrlPolicy, RequestContext 
 import { type VerifierErrorCode, type VerifierPhase } from "./errors.js";
 /** The bound agent-authorization claim read from an AgentAuthorizationCredential. */
 export interface BoundAuthorization {
-    /** The issuer / subject / delegator (svc credential: issuer ≡ subject.id). */
+    /**
+     * The delegating principal — ALWAYS the PROOF-VERIFIED `vc.issuer`, NEVER the
+     * self-asserted `credentialSubject.id`. `verifyCredential` proves the signature
+     * against `issuer` + key control but does NOT constrain the subject id, so
+     * trusting `subject.id` here would let an attacker with their own valid issuer
+     * impersonate any assigner/root (a chain-of-trust bypass). The verifier
+     * additionally enforces `subject.id === issuer` fail-closed in Phase B
+     * (`SUBJECT_ISSUER_MISMATCH`), AFTER Phase A — so a bad-proof credential still
+     * reports its Phase-A code.
+     */
     readonly principal: string;
     /** The delegate the credential authorizes (`svc:authorizes`). */
     readonly authorizes: string;
@@ -135,9 +144,14 @@ export interface VerifyAuthorityResult {
     readonly policyIntegrityProvisional: boolean;
 }
 /**
- * Read the AgentAuthorizationCredential's bound claim from its subject graph —
- * `issuer` is the principal (solid-vc asserts issuer ≡ subject.id); the subject
- * carries `svc:authorizes` / `svc:action` / `svc:target` / `svc:policy`.
+ * Read the AgentAuthorizationCredential's bound claim from its subject graph. The
+ * delegating `principal` is the PROOF-VERIFIED `vc.issuer` — never the
+ * self-asserted `credentialSubject.id` (see {@link BoundAuthorization.principal}
+ * for why trusting the subject id would be a chain-of-trust bypass). The subject
+ * carries the grant fields `svc:authorizes` / `svc:action` / `svc:target` /
+ * `svc:policy`. NOTE this is a pure reader — it does NOT verify the proof; the
+ * verifier runs Phase A (`verifyCredential`) and the Phase-B
+ * `subject.id === issuer` fail-closed check before any of these fields are trusted.
  */
 export declare function readBoundAuthorization(vc: VerifiableCredential): BoundAuthorization | undefined;
 /**

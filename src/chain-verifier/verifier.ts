@@ -13,22 +13,31 @@
 //   assembly — extract each credential's bound policy, order the chain root-first
 //              by `odrld:delegatedUnder`; reject cycles / branches / gaps.
 //   Phase A  — `solid-vc.verifyCredential` on every credential at ONE instant
-//              (`now`): signature, cryptosuite, validity window, proof purpose —
-//              plus the G1 policy-content digest gate (`presentedResources`): the
-//              presented raw policy document must match the credential's SIGNED
-//              `relatedResource` digest, fail-closed (a pure digest failure is
-//              surfaced as a Phase-B `POLICY_INTEGRITY` deny).
-//   Phase B  — cross-binding: each hop's credential is issued by (and self-asserts
-//              a subject of) that hop's `odrl:assigner`; the delegate it authorizes
-//              is the NEXT hop's assigner; the ROOT credential's issuer is the
-//              trusted root principal for the target.
+//              (`now`): signature, cryptosuite, validity window, proof purpose, key
+//              control — PROOF ONLY. The G1 digest gate and the G2 status gate are
+//              DELIBERATELY split out of this call and applied AFTER the Phase-B
+//              subject↔issuer anchor (below), so a spoofed-subject credential that
+//              also has a bad digest / revoked status still reports the precise
+//              `SUBJECT_ISSUER_MISMATCH` rather than a digest/status code. Precedence
+//              once a proof passes: subject↔issuer → digest → status.
+//   Phase B  — cross-binding: FIRST the delegation-trust anchor — each hop's
+//              self-asserted `credentialSubject.id`, when present, MUST equal its
+//              proof-verified `issuer` (`SUBJECT_ISSUER_MISMATCH`); THEN the G1
+//              policy-content digest gate (`verifyRelatedResources`: the presented
+//              raw policy document must match the credential's SIGNED
+//              `relatedResource` digest, fail-closed → `POLICY_INTEGRITY`); THEN each
+//              hop's credential is issued by that hop's `odrl:assigner`, the delegate
+//              it authorizes is the NEXT hop's assigner, and the ROOT credential's
+//              issuer is the trusted root principal for the target.
 //   Phase C  — status ∪ revocation, fail-closed (G2: REAL since Phase 1): each hop
 //              credential's W3C Bitstring Status List entry is resolved through
 //              solid-vc's `resolveStatus` seam (fetched SSRF-guarded, the list's own
 //              signature verified, the bit read) — a set bit → `REVOKED`/`SUSPENDED`;
 //              an unconfirmable entry, OR an entry present with NO resolver supplied,
 //              → `STATUS_RETRIEVAL_ERROR` (the note's "retrieval failure must deny").
-//              Additionally any chain policy in the `odrld:Revocation` revoked set
+//              This credential-level gate runs right after the Phase-B binding anchor
+//              (kept below the subject + digest checks per the precedence above);
+//              additionally any chain policy in the `odrld:Revocation` revoked set
 //              (the delegation profile's POLICY-level mechanism) → deny.
 //   Phase D  — `solid-odrl.evaluateDelegated` over the ordered chain (the G10 seam):
 //              in-scope intersection, unexpired, unrevoked, depth-bounded, acyclic.
@@ -45,13 +54,12 @@ import type {
   VerifiableCredential,
   VerifyCredentialOptions,
 } from "@jeswr/solid-vc";
-import { verifyCredential } from "@jeswr/solid-vc";
+import { verifyCredential, verifyRelatedResources } from "@jeswr/solid-vc";
 import type { ActiveDuty, DelegatedEvaluationResult, OdrlPolicy, RequestContext } from "../odrl.js";
 import { evaluateDelegated } from "../odrl.js";
 import { SVC_ACTION, SVC_AUTHORIZES, SVC_POLICY, SVC_TARGET } from "../vocab.js";
 import {
   PHASE_A_CODES,
-  RELATED_RESOURCE_CODES,
   STATUS_GATE_CODES,
   type VerifierErrorCode,
   type VerifierPhase,
@@ -438,74 +446,37 @@ export async function verifyAgentAuthority(
     }
   }
 
-  // --- Phase A: every credential, one instant (+ the G1 content-digest gate) --
-  // Each hop's credential is verified WITH its presented policy content (when the
-  // chain carries it): solid-vc recomputes the RDFC-1.0 canonical digest of the raw
-  // document and compares it to the credential's SIGNED `relatedResource`
-  // `digestMultibase`, fail-closed — a substituted/mutated policy behind the
-  // (mutable) `svc:policy` IRI can no longer verify.
+  // --- Phase A: every credential, one instant — PROOF + KEY-CONTROL ONLY -------
+  // The G1 policy-content digest gate (`presentedResources`) and the G2
+  // credential-status gate (`resolveStatus`) are DELIBERATELY split OUT of this call
+  // and run AFTER the Phase-B subject↔issuer anchor below. `verifyCredential`
+  // bundles proof + digest + status, so bundling them here would let a
+  // spoofed-subject credential that ALSO carries a bad `relatedResource` digest or a
+  // revoked/unreachable status report `POLICY_INTEGRITY` / a status code INSTEAD of
+  // `SUBJECT_ISSUER_MISMATCH`, masking the impersonation. Intended precedence once a
+  // credential's proof passes: subject↔issuer, THEN digest, THEN status. A genuine
+  // Phase-A failure (signature/validity/issuer/key-control) still wins — it returns
+  // right here, before any of those checks.
   const contents = chain.policyContents ?? {};
   for (const hop of ordered) {
     // biome-ignore lint/style/noNonNullAssertion: every hop bound (checked above)
     const b = bound.get(hop.id)!;
-    const presented: PresentedResourceContent | undefined = contents[hop.id];
-    // G2 fail-closed: a credential CARRYING a status entry, verified WITHOUT a
-    // status resolver, must deny — a status mechanism nobody checked must never
-    // read as "not revoked". (An entry-less credential passes without the gate.)
-    if (options.resolveStatus === undefined && b.vc.credentialStatus !== undefined) {
-      return deny(
-        "C",
-        "STATUS_RETRIEVAL_ERROR",
-        `Credential for hop <${hop.id}> carries a credentialStatus entry but no status resolver was supplied — denying (fail-closed).`,
-        chainIds,
-      );
-    }
     const res = await verifyCredential(b.vc, {
       resolveKey,
       ...(options.isControlledBy !== undefined && { isControlledBy: options.isControlledBy }),
-      ...(options.resolveStatus !== undefined && { resolveStatus: options.resolveStatus }),
       expectedProofPurpose: "assertionMethod",
       now,
-      ...(presented !== undefined && { presentedResources: { [hop.id]: presented } }),
     });
     if (!res.verified) {
       const detail = res.errors.map((e) => e.message).join("; ");
-      // A genuine Phase-A failure (signature/validity/issuer/…) always wins; a
-      // PURE digest-binding failure is the G1 `POLICY_INTEGRITY` deny (Phase B
-      // semantics — the credential↔policy-content cross-binding broke); a PURE
-      // status failure is the G2 Phase-C deny (status ∪ revocation, fail-closed).
+      // With neither the digest nor the status gate enabled, every failure here is a
+      // Phase-A code (signature/validity/issuer/key-control).
       const phaseAError = res.errors.find((e) => PHASE_A_CODES.has(e.code as VerifierErrorCode));
-      if (phaseAError === undefined && res.errors.some((e) => RELATED_RESOURCE_CODES.has(e.code))) {
-        return deny(
-          "B",
-          "POLICY_INTEGRITY",
-          `Policy-content binding failed for <${hop.id}>: ${detail}`,
-          chainIds,
-        );
-      }
-      const statusError = res.errors.find((e) => STATUS_GATE_CODES.has(e.code));
-      if (phaseAError === undefined && statusError !== undefined) {
-        const statusCode: VerifierErrorCode =
-          statusError.code === "STATUS_REVOKED"
-            ? "REVOKED"
-            : statusError.code === "STATUS_SUSPENDED"
-              ? "SUSPENDED"
-              : "STATUS_RETRIEVAL_ERROR";
-        return deny(
-          "C",
-          statusCode,
-          `Credential status gate failed for hop <${hop.id}>: ${detail}`,
-          chainIds,
-        );
-      }
       const code: VerifierErrorCode =
         phaseAError !== undefined ? (phaseAError.code as VerifierErrorCode) : "INVALID_SIGNATURE";
       return deny("A", code, `Phase A (credential verification) failed: ${detail}`, chainIds);
     }
   }
-  // The permit is fully content-bound (non-provisional) only when EVERY hop's raw
-  // policy content was presented — and therefore digest-checked above, fail-closed.
-  const allContentBound = ordered.every((p) => contents[p.id] !== undefined);
 
   // --- Phase B: cross-binding ----------------------------------------------
   // SECURITY (delegation-trust anchor): each credential's self-asserted
@@ -531,6 +502,86 @@ export async function verifyAgentAuthority(
         "B",
         "SUBJECT_ISSUER_MISMATCH",
         `Credential subject <${assertedSubjectId}> ≠ its proof-verified issuer <${b.vc.issuer}> — refusing a subject-spoofed authorization for hop <${hop.id}>.`,
+        chainIds,
+      );
+    }
+  }
+
+  // --- G1 policy-content digest gate (AFTER the subject↔issuer anchor) ---------
+  // Content integrity only — the proof was verified in Phase A. Each presented raw
+  // policy document's RDFC-1.0 canonical digest MUST match the credential's SIGNED
+  // `relatedResource` digest, fail-closed (`POLICY_INTEGRITY` on a missing digest or
+  // a mismatch). `verifyRelatedResources` checks ONLY the digest bindings, so a
+  // spoofed-subject credential that also has a bad digest was already rejected above
+  // with `SUBJECT_ISSUER_MISMATCH` and never reaches here.
+  for (const hop of ordered) {
+    const presented: PresentedResourceContent | undefined = contents[hop.id];
+    if (presented === undefined) {
+      continue;
+    }
+    // biome-ignore lint/style/noNonNullAssertion: every hop bound (checked above)
+    const b = bound.get(hop.id)!;
+    const res = await verifyRelatedResources(b.vc, { [hop.id]: presented });
+    if (!res.verified) {
+      const detail = res.errors.map((e) => e.message).join("; ");
+      return deny(
+        "B",
+        "POLICY_INTEGRITY",
+        `Policy-content binding failed for <${hop.id}>: ${detail}`,
+        chainIds,
+      );
+    }
+  }
+  // The permit is fully content-bound (non-provisional) only when EVERY hop's raw
+  // policy content was presented — and therefore digest-checked above, fail-closed.
+  const allContentBound = ordered.every((p) => contents[p.id] !== undefined);
+
+  // --- G2 credential-level status gate (AFTER the subject anchor + digest) -----
+  // FAIL-CLOSED: a credential CARRYING a `credentialStatus` entry with NO resolver
+  // denies (a status mechanism nobody checked must never read as "not revoked");
+  // with a resolver, the hop credential's W3C Bitstring Status List entry is fetched
+  // (SSRF-guarded), ITS OWN signature verified, and the bit read — a set bit →
+  // `REVOKED` / `SUSPENDED`, an unconfirmable entry → `STATUS_RETRIEVAL_ERROR`. We
+  // re-invoke `verifyCredential` with ONLY `resolveStatus` (never
+  // `presentedResources`) so solid-vc's exact fail-closed status handling — including
+  // resolver-throws → `STATUS_UNREACHABLE` — is reused verbatim rather than
+  // re-derived here (the proof, already verified in Phase A, verifies again
+  // deterministically). Split out of Phase A so a spoofed-subject or
+  // policy-substituted credential reports its precise code, not a status one.
+  for (const hop of ordered) {
+    // biome-ignore lint/style/noNonNullAssertion: every hop bound (checked above)
+    const b = bound.get(hop.id)!;
+    if (options.resolveStatus === undefined) {
+      if (b.vc.credentialStatus !== undefined) {
+        return deny(
+          "C",
+          "STATUS_RETRIEVAL_ERROR",
+          `Credential for hop <${hop.id}> carries a credentialStatus entry but no status resolver was supplied — denying (fail-closed).`,
+          chainIds,
+        );
+      }
+      continue;
+    }
+    const res = await verifyCredential(b.vc, {
+      resolveKey,
+      ...(options.isControlledBy !== undefined && { isControlledBy: options.isControlledBy }),
+      resolveStatus: options.resolveStatus,
+      expectedProofPurpose: "assertionMethod",
+      now,
+    });
+    if (!res.verified) {
+      const detail = res.errors.map((e) => e.message).join("; ");
+      const statusError = res.errors.find((e) => STATUS_GATE_CODES.has(e.code));
+      const statusCode: VerifierErrorCode =
+        statusError?.code === "STATUS_REVOKED"
+          ? "REVOKED"
+          : statusError?.code === "STATUS_SUSPENDED"
+            ? "SUSPENDED"
+            : "STATUS_RETRIEVAL_ERROR";
+      return deny(
+        "C",
+        statusCode,
+        `Credential status gate failed for hop <${hop.id}>: ${detail}`,
         chainIds,
       );
     }
