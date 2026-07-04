@@ -106,9 +106,19 @@ export interface AuditReport {
 export interface AuditOptions {
     /** Resolve a `verificationMethod` to a public key (for the four-phase re-run). */
     readonly resolveKey: Parameters<typeof verifyAgentAuthority>[1]["resolveKey"];
-    /** The issuer↔key controller check to use in the re-run (G4 stub). */
+    /** The document-resolved issuer↔key controller check for the re-run (G4, real). */
     readonly isControlledBy?: Parameters<typeof verifyAgentAuthority>[1]["isControlledBy"];
-    /** The revoked set to consult in the re-run (Phase C). */
+    /**
+     * The credential-status resolver for the re-run (G2, real — the Bitstring
+     * Status List gate). REQUIRED in practice when any trace credential carries a
+     * `credentialStatus` entry: the verifier fails closed (`STATUS_RETRIEVAL_ERROR`)
+     * on a status-carrying credential verified without a resolver. NOTE a Bitstring
+     * list reflects CURRENT status, not status as of the action instant — an
+     * after-the-fact revocation therefore surfaces as a re-run divergence, which is
+     * itself an audit finding, not a masked pass.
+     */
+    readonly resolveStatus?: Parameters<typeof verifyAgentAuthority>[1]["resolveStatus"];
+    /** The revoked set to consult in the re-run (Phase C, policy-level). */
     readonly revoked?: readonly string[];
     /** The purpose evident in the offending artifact — drives the dispute re-run. */
     readonly actualUsePurpose?: string;

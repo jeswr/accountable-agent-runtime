@@ -9,6 +9,8 @@ export declare class InMemoryPod implements ResourceSink, ResourceSource {
     get(url: string): StoredResource | undefined;
     /** True when a resource exists. */
     has(url: string): boolean;
+    /** Remove a resource (subsequent fetches 404 — e.g. an unreachable status list). */
+    delete(url: string): void;
     /** Every stored URL beginning with `prefix` (a container listing). */
     list(prefix: string): string[];
     /** Every stored URL (for diagnostics / golden snapshots). */

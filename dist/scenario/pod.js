@@ -25,6 +25,10 @@ export class InMemoryPod {
     has(url) {
         return this.store.has(url);
     }
+    /** Remove a resource (subsequent fetches 404 — e.g. an unreachable status list). */
+    delete(url) {
+        this.store.delete(url);
+    }
     /** Every stored URL beginning with `prefix` (a container listing). */
     list(prefix) {
         return [...this.store.keys()].filter((url) => url.startsWith(prefix));

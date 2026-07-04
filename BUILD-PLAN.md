@@ -53,19 +53,33 @@ repo, normal gate + roborev:
    each hop's raw policy document, `policyIntegrityProvisional` is `false` on a fully
    content-bound chain, and the golden matrix pins the enforced verdicts).
 4. **solid-vc: WebID key helpers** (G5) + **document-resolved `isControlledBy`** (G4) — the
-   `publishVerificationMethod`/`resolveWebIdKey` pair over `@jeswr/guarded-fetch`.
+   `publishVerificationMethod`/`resolveWebIdKey` pair over `@jeswr/guarded-fetch`. **DONE**
+   (`solid-vc` @ 7f7a4e0; the scenario publishes every issuer's verification method into its
+   WebID + key documents and verifies through `createWebIdKeyResolver` — the `KeyRing` and
+   `sameOriginController` stubs are deleted; golden rows pin the unresolvable-key and
+   not-issuer-controlled denies).
 5. **solid-vc: Bitstring Status List** (G2) — issuance param + list encode/decode/hosting helper
    + the Phase C gate (fail-closed on retrieval failure), then wire the note's bit↔policy
-   mapping into `chain-verifier/`.
+   mapping into `chain-verifier/`. **DONE** (`solid-vc` @ 7f7a4e0; the chain verifier consumes
+   `resolveStatus` per hop — revoked/suspended/unreachable → Phase-C denies, and a
+   status-carrying credential verified with no resolver denies fail-closed; the scenario hosts
+   Alice's signed list, the mandate carries its entry, golden rows pin revoked / unreachable /
+   resolver-missing / forged-list).
 6. **decision-record shape** (G9) — provisional `https://w3id.org/jeswr/accountable-agent#`
    terms in the runtime (documented, minimal); file the tracking item to re-base on the ODRL CG
    report vocabulary when its namespace lands.
 7. Runtime: swap each stub for the landed API as it merges; extend the golden masters (the
-   matrix rows flip from "provisional" to "enforced", none are deleted). **DONE for G1/G8/G10**
-   (this repo's Phase-1 integration); G2/G4/G5 swaps follow their upstream items 4–5.
+   matrix rows flip from "provisional" to "enforced", none are deleted). **DONE for
+   G1/G2/G4/G5/G8/G10** (this repo's Phase-1 integration — the four-phase verifier is now
+   stub-free).
 8. Exit criteria: the scenario runs with **zero gap-stubs except the carrier (G11) and
    countersigning (G15 mirrored-credential pattern documented)**; `chain-verifier/` extraction
-   readiness reviewed (→ `@jeswr/agent-authz-verifier` when a second consumer exists).
+   readiness reviewed (→ `@jeswr/agent-authz-verifier` when a second consumer exists). **MET**
+   for the verifier. The remaining labelled non-verifier items: G9 (the decision-record shape is
+   real but sits on a provisional `w3id.org/jeswr/accountable-agent#` vocabulary awaiting the
+   ODRL CG report namespace), G11 (the in-process carrier — Phase 2), G12 (no stock
+   purpose/period intent shape in solid-a2a; the scenario builds its own), G14 (the
+   WAC↔agreement linkage lives in the decision record only) and G15 (countersigning — Phase 2).
 
 ## Phase 2 — live pod demo
 

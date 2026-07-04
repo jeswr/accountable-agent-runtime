@@ -102,9 +102,18 @@ export interface VerifyAuthorityOptions {
   readonly rootPrincipal: string;
   /** The single evaluation instant across all phases (the note's one-instant rule). */
   readonly now: Date;
-  /** Resolve a `verificationMethod` IRI to a public `CryptoKey` (G5: runtime-supplied). */
+  /**
+   * Resolve a `verificationMethod` IRI to a public `CryptoKey` (G5, REAL since
+   * Phase 1): pass solid-vc's `createWebIdKeyResolver().resolveKey` for the
+   * fail-closed WebID-document resolution.
+   */
   readonly resolveKey: VerifyCredentialOptions["resolveKey"];
-  /** Document-resolved issuer↔key controller check (G4). Defaults to solid-vc's heuristic. */
+  /**
+   * The issuer↔key controller check (G4, REAL since Phase 1): pass the SAME
+   * `createWebIdKeyResolver()` instance's `isControlledBy` for the fail-closed
+   * two-directional document resolution. When omitted, solid-vc falls back to
+   * its documented prefix heuristic — acceptable only for closed test setups.
+   */
   readonly isControlledBy?: VerifyCredentialOptions["isControlledBy"];
   /**
    * Phase C, the POLICY-level revocation input: policy IRIs revoked via the

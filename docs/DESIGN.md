@@ -207,7 +207,7 @@ The full call-by-call walk is [`SCENARIO.md`](./SCENARIO.md). The seam table:
 
 | # | Step | Package call(s) | Status |
 |---|---|---|---|
-| 0 | keys + publication | `solid-vc` `generateKeyPairForSuite`, `exportPublicJwk` | ✅ / **G5** (no publish/resolve helper) |
+| 0 | keys + publication | `solid-vc` `generateKeyPairForSuite`, `publishVerificationMethod` → the WebID + key documents; resolution via `createWebIdKeyResolver` | ✅ **G5 CLOSED** (Phase 1: publish + document-resolve shipped; the in-memory KeyRing is deleted) |
 | 0 | agent pointer | `solid-agent-card` `buildAgentPointer(webId, agent)` → write to profile | ✅ |
 | 0 | agent self-description | `solid-agent-card` `describeAgent(descriptor)` → host both docs | ✅ |
 | 1 | mandate P (root Agreement) | `solid-odrl` policy types + `policyToTurtle` (`profile`, `grantUse`, `odrld:delegationDepth`, `nextPolicy` duty round-trip) | ✅ **G10 CLOSED** (delegation profile merged to `solid-odrl` main; pinned by sha) |
@@ -216,7 +216,7 @@ The full call-by-call walk is [`SCENARIO.md`](./SCENARIO.md). The seam table:
 | 3 | pin + verify the protocol | `solid-a2a` `verifyProtocolDocument(fetchedTurtle, hash)` | ✅ / **G11** (no transport — runtime is the carrier) |
 | 3 | upgrade handshake | `solid-a2a` `encodeUpgradeOffer({…, required: true})`, `decodeUpgradeResponse`, `mayDowngradeToNl` | ✅ |
 | 3 | intent exchange | `solid-a2a` `parseIntent` / `validateIntent(intent, pd)` | ✅ / **G12** (no prebuilt purpose+period grant shape) |
-| 4 | verify the peer's authority | **the four-phase verifier**: `solid-vc` `verifyCredential` (Phase A) + cross-binding (Phase B) + status∪revocation (Phase C) + `solid-odrl` `evaluateDelegated` (Phase D); request via `requestContextFromA2AIntent`; org-assignee actors via the **identity-composition rule** (second chain rooted at the leaf assignee) | **G7** (Phases B–C + assembly + identity composition implemented nowhere; the runtime's one new component) + **G2, G4** |
+| 4 | verify the peer's authority | **the four-phase verifier**: `solid-vc` `verifyCredential` (Phase A) + cross-binding (Phase B) + status∪revocation (Phase C) + `solid-odrl` `evaluateDelegated` (Phase D); request via `requestContextFromA2AIntent`; org-assignee actors via the **identity-composition rule** (second chain rooted at the leaf assignee) | ✅ **G7 built (runtime-local), G2 + G4 CLOSED** (Phase 1: the Bitstring status gate runs per hop through `resolveStatus`, fail-closed; keys + controller checks are WebID-document-resolved) |
 | 5 | conclude the Agreement | `solid-odrl` policy types (+ `odrld:delegatedUnder`), `policyToTurtle`; sign via `solid-vc` `issue` | ✅ / **G15** (no countersigning path) |
 | 6 | materialise access | `@solid/object` typed `.acl` accessors (WAC grant: institute WebID, `acl:Read`, target) | ✅ (existing lib) / **G14** (WAC cannot reference the agreement) |
 | 7 | act + record | injected DPoP-authed `fetch`; PROV bundle via `solid-odrl` `actionProvenance` + `delegationProvenance(chain)` for the overlay | ✅ **G8 CLOSED** (Phase 1: `actionProvenance()` shipped in `solid-odrl`; the runtime's local emitter is deleted) |
@@ -243,20 +243,36 @@ not newly discovered); the rest are new findings from this design.
   the credential subject graph, signed with it) and/or (b) `relatedResource` + digest emission,
   with the corresponding digest check in `verifyCredential`. *Blocking for Phase 1* (Phase 0 can
   stub it).
-- **G2 — `credentialStatus` / Bitstring Status List.** Only a vocabulary constant exists; no
-  issuance parameter, no hosting/encoding helper, no Phase-C gate in `verifyCredential`
-  (retrieval failure must deny, per the note). Needed for the revocation half of the scenario's
-  dispute act; Phase 0/1 can carry `odrld:Revocation` only and defer the bitstring.
+- **G2 — `credentialStatus` / Bitstring Status List. CLOSED (Phase 1, `solid-vc` @ 7f7a4e0).**
+  Issuance parameter (`bitstringStatusListEntry` on `AgentAuthorization`), list build/host/flip
+  helpers (`buildBitstringStatusListCredential` / `withStatusBit`), and the fail-closed Phase-C
+  gate (`createBitstringStatusResolver` → `verifyCredential`'s `resolveStatus`) all shipped. The
+  runtime's chain verifier consumes the seam per hop and maps `STATUS_REVOKED`/`_SUSPENDED`/
+  `_UNREACHABLE` to Phase-C `REVOKED`/`SUSPENDED`/`STATUS_RETRIEVAL_ERROR`; a status-carrying
+  credential verified with NO resolver also denies (fail-closed). The scenario hosts Alice's
+  signed list, the mandate credential carries its entry, and the golden matrix pins the revoked /
+  unreachable / resolver-missing / forged-list verdicts. `odrld:Revocation` remains the
+  delegation profile's distinct POLICY-level revocation input (a mechanism, not a stub).
+  Original statement (for the record): only a vocabulary constant existed — no issuance
+  parameter, no hosting/encoding helper, no Phase-C gate.
 - **G3 — `verifyPresentation` with challenge/domain binding.** Presentations are modelled but not
   verifiable; live agent-to-agent presentation (Phase 2+) needs it to prevent replay of a
   captured presentation.
-- **G4 — document-resolved `isControlledBy`.** The default issuer–key controller check is a
-  prefix heuristic the note itself flags as unsafe; ship a reference resolver that fetches the
-  controller document (SSRF-guarded) and checks `assertionMethod` listing. Compose with G5.
-- **G5 — WebID ↔ verification-method helpers.** The `resolveKey` seam has no reference
-  implementation: nothing publishes a key into a WebID/controller document and nothing resolves
-  `verificationMethod → CryptoKey` from one. A small `publishVerificationMethod` /
-  `resolveWebIdKey` pair (guarded fetch, `importPublicKey`) unblocks every verifying party.
+- **G4 — document-resolved `isControlledBy`. CLOSED (Phase 1, `solid-vc` @ 7f7a4e0).**
+  `createWebIdKeyResolver` ships the fail-closed two-directional document resolution (the
+  WebID's own document must list the key under `sec:assertionMethod` AND the key document must
+  bind `sec:controller` back to exactly that WebID; redirects refused, SSRF-guarded default
+  fetch). The runtime verifies with it everywhere — the `sameOriginController` heuristic is
+  deleted, and the golden matrix pins the unresolvable-key and not-issuer-controlled denies.
+  Original statement (for the record): the default check was a prefix heuristic the note itself
+  flags as unsafe.
+- **G5 — WebID ↔ verification-method helpers. CLOSED (Phase 1, `solid-vc` @ 7f7a4e0).**
+  `publishVerificationMethod` (the standard `sec:Multikey` RDF a WebID/key document must expose)
+  + `resolveWebIdKey` shipped; the scenario publishes every issuer's method into its WebID + key
+  documents on the pod (`publishActorKey`, split by authoritative document, merged via
+  parse→union→re-serialise) and resolves keys from them — the in-memory `KeyRing` is deleted.
+  Original statement (for the record): nothing published a key into a WebID/controller document
+  and nothing resolved `verificationMethod → CryptoKey` from one.
 - **G6 (minor) — `agentAuthorizationFromRdf` drops `id`/`validFrom`/`validUntil`** (returns only
   the five core fields). The runtime reads windows from the credential layer instead, so this is
   a completeness nit, not a blocker.

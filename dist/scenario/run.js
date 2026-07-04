@@ -4,19 +4,22 @@
 // deterministic run over the in-memory pod double with REAL crypto (D7). Every
 // package call is the real API. Phase 1 closed G1 (credentials digest-bind the
 // exact policy bytes; the verifier checks them fail-closed — the permit is no
-// longer policy-integrity-provisional), G8 (solid-odrl `actionProvenance`) and
-// G10 (the delegation profile is on solid-odrl main); the remaining labelled
-// stubs are G9 (provisional decision shape), G11 (the in-process carrier) and
-// G12 (no stock purpose/period shape).
+// longer policy-integrity-provisional), G2 (the mandate credential carries a
+// Bitstring Status List entry, the signed list is pod-hosted, and Phase C reads
+// the bit fail-closed), G4/G5 (keys publish into + resolve from the WebID
+// documents on the pod, both directions fail-closed), G8 (solid-odrl
+// `actionProvenance`) and G10 (the delegation profile is on solid-odrl main);
+// the remaining labelled stubs are G9 (provisional decision shape), G11 (the
+// in-process carrier) and G12 (no stock purpose/period shape).
 import { decodeUpgradeResponse, encodeUpgradeOffer, encodeUpgradeResponse, mayDowngradeToNl, parseIntent, validateIntent, verifyProtocolDocument, } from "@jeswr/solid-a2a";
 import { buildAgentPointer, describeAgent, discoverAgent } from "@jeswr/solid-agent-card";
-import { issueAgentAuthorization } from "@jeswr/solid-vc";
+import { bitstringStatusListEntry, buildBitstringStatusListCredential, issue, issueAgentAuthorization, } from "@jeswr/solid-vc";
 import { verifyAgentAuthority, } from "../chain-verifier/index.js";
 import { policyToTurtle, requestContextFromA2AIntent } from "../odrl.js";
 import { serializeTurtle } from "../rdf.js";
 import { writeActivity, writeDecision, writeEngagement, } from "../trace/index.js";
-import { buildAgreement, buildInstituteInternal, buildMandate, CAST, VALID_FROM, VALID_UNTIL, } from "./cast.js";
-import { generateActorKey, KeyRing, sameOriginController } from "./keys.js";
+import { buildAgreement, buildInstituteInternal, buildMandate, CAST, MANDATE_STATUS_INDEX, VALID_FROM, VALID_UNTIL, } from "./cast.js";
+import { generateActorKey, podKeyResolver, podStatusResolver, publishActorKey } from "./keys.js";
 import { InMemoryPod } from "./pod.js";
 import { buildRuntimeProtocolDocument, RUNTIME_PROTOCOL_ID } from "./protocol.js";
 /** A refusal at a negotiation step (a fail-closed exit before authorization). */
@@ -26,17 +29,21 @@ export class ScenarioRefusal extends Error {
 export async function runScenario(options = {}) {
     const now = options.now ?? new Date("2026-08-01T00:00:00.000Z");
     const pod = new InMemoryPod();
-    const keyRing = new KeyRing();
     // --- Step 0: identities, keys, pointers, self-description ----------------
     const aliceKey = await generateActorKey(CAST.aliceKeyVm);
     const agentAKey = await generateActorKey(CAST.agentAKeyVm);
     const instKey = await generateActorKey(CAST.instKeyVm);
-    for (const k of [aliceKey, agentAKey, instKey]) {
-        keyRing.register(k);
-    }
     // Institute org profile → agent pointer to agentR (the "org links its agent").
+    // Written FIRST so the key publication below merges into it (one org document).
     const pointer = buildAgentPointer(CAST.inst, CAST.agentR);
     pod.put(CAST.instProfileDoc, await pointer.toString(), "text/turtle");
+    // G4/G5 (Phase 1: REAL) — each issuer PUBLISHES its verification method into
+    // its WebID + key documents on the pod, and every verification below resolves
+    // keys FROM those documents (fail-closed, both directions), never from a ring.
+    await publishActorKey(pod, CAST.alice, aliceKey);
+    await publishActorKey(pod, CAST.agentA, agentAKey);
+    await publishActorKey(pod, CAST.inst, instKey);
+    const keyResolver = podKeyResolver(pod);
     // The institute agent self-describes (Agent Description hosted at its WebID doc).
     const { agentDescription } = describeAgent({
         id: CAST.agentR,
@@ -62,6 +69,22 @@ export async function runScenario(options = {}) {
     const mandateTtl = await policyToTurtle(mandate);
     const agreementTtl = await policyToTurtle(agreement);
     const instituteInternalTtl = await policyToTurtle(instituteInternal);
+    // G2 (Phase 1: REAL) — Alice hosts a signed W3C Bitstring Status List credential
+    // (all bits clear), and the mandate credential carries a `credentialStatus` entry
+    // pointing at it. The verifier's Phase-C gate fetches the list, verifies ITS
+    // signature through the same WebID-document key seams, and reads the bit —
+    // fail-closed (an unreachable/unverifiable list denies; a set bit revokes).
+    const statusListCredential = await issue({
+        credential: buildBitstringStatusListCredential({
+            id: CAST.statusListUrl,
+            issuer: CAST.alice,
+            statusPurpose: "revocation",
+            validFrom: VALID_FROM,
+            validUntil: VALID_UNTIL,
+        }),
+        key: aliceKey,
+    });
+    pod.put(CAST.statusListUrl, JSON.stringify(statusListCredential), "application/vc+ld+json");
     const mandateVc = await issueAgentAuthorization({
         principal: CAST.alice,
         agent: CAST.agentA,
@@ -71,6 +94,11 @@ export async function runScenario(options = {}) {
         policyContent: mandateTtl,
         validFrom: VALID_FROM,
         validUntil: VALID_UNTIL,
+        credentialStatus: bitstringStatusListEntry({
+            statusPurpose: "revocation",
+            statusListIndex: MANDATE_STATUS_INDEX,
+            statusListCredential: CAST.statusListUrl,
+        }),
     }, aliceKey);
     const agreementVc = await issueAgentAuthorization({
         principal: CAST.agentA,
@@ -154,8 +182,11 @@ export async function runScenario(options = {}) {
         request,
         rootPrincipal: CAST.alice,
         now,
-        resolveKey: keyRing.resolveKey,
-        isControlledBy: sameOriginController,
+        resolveKey: keyResolver.resolveKey,
+        isControlledBy: keyResolver.isControlledBy,
+        // G2 (real): the Bitstring status gate over the pod-hosted list, at the same
+        // single evaluation instant.
+        resolveStatus: podStatusResolver(pod, { now }),
         revoked: [],
         actor: CAST.agentR,
         actorChain,
@@ -221,7 +252,13 @@ export async function runScenario(options = {}) {
     });
     return {
         pod,
-        keyRing,
+        keyResolver,
+        actorKeys: { alice: aliceKey, agentA: agentAKey, inst: instKey },
+        statusList: {
+            url: CAST.statusListUrl,
+            index: MANDATE_STATUS_INDEX,
+            credential: statusListCredential,
+        },
         now,
         discovery,
         protocolHash: pd.hash,

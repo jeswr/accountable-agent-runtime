@@ -1,10 +1,9 @@
 import type { AgentDiscovery } from "@jeswr/solid-agent-card";
-import type { VerifiableCredential } from "@jeswr/solid-vc";
+import type { KeyPair, VerifiableCredential, WebIdKeyResolver } from "@jeswr/solid-vc";
 import { type VerifyAuthorityResult } from "../chain-verifier/index.js";
 import { type OdrlPolicy } from "../odrl.js";
 import { type WrittenArtifact } from "../trace/index.js";
 import { CAST } from "./cast.js";
-import { KeyRing } from "./keys.js";
 import { InMemoryPod } from "./pod.js";
 /** A refusal at a negotiation step (a fail-closed exit before authorization). */
 export declare class ScenarioRefusal extends Error {
@@ -20,7 +19,33 @@ export interface WacGrant {
 /** The full result of a scenario run — everything the tests + auditor consume. */
 export interface ScenarioResult {
     readonly pod: InMemoryPod;
-    readonly keyRing: KeyRing;
+    /**
+     * The document-resolving `{ resolveKey, isControlledBy }` pair the run verified
+     * with (G4/G5, real): keys resolve from the WebID documents hosted on the pod,
+     * never from an in-memory ring. NOTE it caches documents for its lifetime —
+     * after mutating key documents, build a fresh one with `podKeyResolver(pod)`.
+     */
+    readonly keyResolver: WebIdKeyResolver;
+    /**
+     * The actors' signing key pairs (test material — lets variant tests re-sign,
+     * e.g. a revoked status list or a cross-signed credential).
+     */
+    readonly actorKeys: {
+        readonly alice: KeyPair;
+        readonly agentA: KeyPair;
+        readonly inst: KeyPair;
+    };
+    /**
+     * The hosted Bitstring status list (G2): its URL, the mandate credential's bit
+     * index, and the SIGNED list credential as issued (all bits clear). Variant
+     * tests flip the bit (`withStatusBit`), re-sign with `actorKeys.alice`, and
+     * re-host to exercise the revoked path.
+     */
+    readonly statusList: {
+        readonly url: string;
+        readonly index: number;
+        readonly credential: VerifiableCredential;
+    };
     readonly now: Date;
     readonly discovery: AgentDiscovery;
     readonly protocolHash: string;
