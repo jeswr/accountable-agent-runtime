@@ -2,8 +2,10 @@
 
 # Phase-2 demo design — the §4 scenario, live, one command
 
-**Bead:** `suite-tracker-r8mz`. **Status:** build-ready design; no implementation code in this
-change. This document turns [`BUILD-PLAN.md`](../BUILD-PLAN.md) Phase 2's four bullet points into
+**Bead:** `suite-tracker-r8mz`. **Status:** IMPLEMENTED — Wave-1 (T1–T3, the live substrate) and
+Wave-2 (T4–T7, the live scenario + LDN carrier + auditor CLI + one-command harness) have landed;
+`§9` folds in the corrections the build discovered. This document turns
+[`BUILD-PLAN.md`](../BUILD-PLAN.md) Phase 2's four bullet points into
 a concrete, sub-task-sequenced design for **THE north-star artifact**: a one-command, live-pod
 demonstration of the [Accountable Web of Agents](https://github.com/jeswr/agentic-solid-vision)
 §4 accountability scenario, ending in an **auditor command** that mechanically answers
@@ -643,3 +645,64 @@ try {
   if (!flags.keep) await css.teardown();                           // [7]
 }
 ```
+
+---
+
+## 9. Corrections folded in during the build (Wave-1 + Wave-2)
+
+The design above was written before implementation. Five things the build found are folded in
+here (each already live in the code); the section §-references above are otherwise accurate.
+
+**Wave-1 (T1–T3) corrections — the CSS boot + seeding substrate:**
+
+1. **CSS must boot `NODE_ENV=production`** (`live/css.ts`). Under `NODE_ENV=test` (which vitest
+   sets and the spawned child inherits) CSS@7's embedded `oidc-provider` loads a dev/test code
+   path that references the `jest` global — absent here — so its discovery endpoint 500s forever.
+   The child is spawned with `NODE_ENV=production` and a stripped `NODE_OPTIONS` / vitest markers.
+   A booted CSS is a real server, so production mode is correct anyway.
+2. **Readiness gates on OIDC discovery returning 200, not merely the root answering**
+   (`live/css.ts`). CSS's HTTP root responds (even a 4xx) *before* its OIDC provider finishes
+   initialising, and seeding's first act is a client-credentials token exchange that dereferences
+   that provider — hitting it cold 500s. `waitUntilReady` polls `/.well-known/openid-configuration`
+   for a 200, closing the cold-start race for all four parallel actor sessions.
+3. **Seeding ACL writes are GET-then-overwrite** (`live/seed.ts`). CSS auto-provisions a default
+   `.acl` for some resources (notably the profile card), so the ACL may pre-exist. The seeder GETs
+   first (recording the ETag) then PUTs — overwriting the default with the owner-control fail-closed
+   rules (never merging). **Wave-2 addition:** an `application/ld+json` resource (Alice's status
+   list) can come back from CSS with a *weak* ETag, which fails the strong `If-Match` comparison
+   RFC 9110 requires; `LivePod.put({ overwrite: true })` sends `If-Match:*` (overwrite-iff-exists,
+   weak-ETag-safe) for an intentional re-host, keeping the create-only / lost-update guard as the
+   default.
+4. **The loopback transport gate guards the credentialed account/token paths too**
+   (`live/fetch.ts` `assertBaseTransport`, called from `live/account.ts` + `live/auth.ts`). A
+   non-loopback plaintext `http:` base is refused *before* any account-creation / password /
+   client-credential POST or token exchange — those carry the generated password + client secret,
+   so the same loopback-only posture the discovery fetch uses is applied to the credentialed setup.
+5. **Each actor's verification method is co-located in its WebID document** (`keyVm =
+   <profileDoc>#key`, `live/cast.ts` + `live/seed.ts`). `publishVerificationMethod({ controller:
+   webId, key })` writes the controller listing + key material into the one WebID document, so the
+   WebID-document key resolver reads both from a single dereference.
+
+**Wave-2 (T4–T7) module map** (all additive; `scenario/`, the verifier, and `trace/` are unchanged
+so the 58 golden masters still pin the deterministic run byte-for-byte):
+
+| Module | Task | Role |
+|---|---|---|
+| `live/policies.ts` | T4 | cast-parameterised `buildLiveMandate`/`buildLiveAgreement`/`buildLiveInstituteInternal` (the fixed-CAST originals untouched) |
+| `live/resolvers.ts` | T4 | the production `createWebIdKeyResolver` / `createBitstringStatusResolver` over the loopback guarded fetch |
+| `live/run.ts` | T4 | the live scenario: discover → LDN handshake → four-phase verify → **WAC 403→200 (asserted)** → mirrored disjoint-writer trace → announce |
+| `live/ldn.ts` | T5 | the G11 AS2 JSON-LD LDN carrier — inbox discovery, post, poll, the fail-closed receiver rules |
+| `live/negative.ts` | T7 | the four negative acts (N1 forged hop / N2 out-of-scope / N3 revoked subtree, reverted / N4 PROV-omit) |
+| `live/audit.ts` + `cli.ts` | T6 | the zero-credential auditor over `LivePod`-as-source + the `bin` (transcript / JSON envelope / exit codes) |
+| `live/demo.ts` | T7 | the one-command harness (`demo:live`): boot → seed → run → negatives → audit → print → teardown |
+
+**Two resolved design ambiguities:**
+
+- **The auditor's read source is a server-root-scoped `LivePod`** over the zero-credential guarded
+  fetch (design §5.1 said "`LivePod`-as-source"): scoping the pod to the *server root* lets it
+  GET/LIST public resources across every pod (the mirror trace + the canonical policy docs its
+  credentials name live on different pods), still SSRF-guarded + redirect-refusing.
+- **The audited trace is the institute's public-read MIRROR** (`institute.mirrorBase`), written by
+  agent R's disjoint session; Alice's copy (`alice.engagementBase`, agent A's session) is the
+  divergence mirror. The canonical policy documents + credentials the auditor dereferences are
+  public on whichever pod their IRIs name, so the walk needs no credentials.
