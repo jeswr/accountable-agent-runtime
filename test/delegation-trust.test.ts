@@ -18,6 +18,13 @@
 // BEFORE the G1 digest gate and the G2 status gate (both split out of Phase A), so a
 // spoofed-subject credential that ALSO fails the digest/status gate still reports
 // the precise SUBJECT_ISSUER_MISMATCH — see the PRECEDENCE case.
+//
+// TWO-PASS ORDERING (the terminal fix for a roborev Medium diagnostic
+// phase-ordering finding — NOT a security bypass, since every invalid chain was
+// already rejected either way): the verifier runs Phase A for EVERY hop first
+// (Pass 1), and only once every hop has passed does it run the per-hop
+// subject-issuer/digest/status gates (Pass 2) — so a LATER hop's bad proof is
+// never masked by an EARLIER hop's Phase-B/C finding. See the CROSS-HOP case.
 
 import { buildAgentAuthorizationCredential, issue, type KeyPair } from "@jeswr/solid-vc";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -73,6 +80,19 @@ async function forgeWithAttackerIssuer(input: {
   // subject id stays the spoofed party; issuer is now the attacker. A genuine,
   // fully-verifiable credential whose subject.id lies about who granted it.
   return issue({ credential: { ...unsigned, issuer: ATTACKER }, key: attackerSigningKey });
+}
+
+/** Flip one character of a signed credential's proof value (an invalid signature). */
+function tamperProof<T extends { proof: unknown }>(vc: T): T {
+  const copy = structuredClone(vc) as T & {
+    proof: { proofValue: string } | { proofValue: string }[];
+  };
+  const proof = Array.isArray(copy.proof) ? copy.proof[0] : copy.proof;
+  if (proof !== undefined) {
+    const v = proof.proofValue;
+    proof.proofValue = v.slice(0, -1) + (v.endsWith("z") ? "A" : "z");
+  }
+  return copy;
 }
 
 /** Verify `chain` against the scenario's trusted root with fresh pod resolvers. */
@@ -220,6 +240,30 @@ describe("delegation-trust — the principal is the proof-verified issuer, not s
     });
     expect(auth?.principal).toBe(ATTACKER);
     expect(auth?.principal).not.toBe(base.cast.alice);
+  });
+
+  it("CROSS-HOP TWO-PASS ORDERING: root hop spoofed subject + child hop bad proof → reports the CHILD's Phase-A code, not the root's SUBJECT_ISSUER_MISMATCH", async () => {
+    // The root (mandate) hop has a VALID proof (attacker's own key) but a SPOOFED
+    // subject.id (Alice) — on its own this reports SUBJECT_ISSUER_MISMATCH (see
+    // SUBJECT-SPOOFED ROOT above). The CHILD (agreement) hop is otherwise
+    // legitimate but has a TAMPERED proof (an invalid signature). The two-pass
+    // fix must run Phase A for EVERY hop (Pass 1) before ANY hop's Phase-B/C
+    // gates (Pass 2) run, so the child's Phase-A failure (INVALID_SIGNATURE) is
+    // reported instead of the root's Phase-B finding.
+    const forgedRootSpoofed = await forgeWithAttackerIssuer({
+      principal: base.cast.alice,
+      agent: base.cast.agentA,
+      action: ["read", "grantUse"],
+      policy: base.cast.mandateId,
+    });
+    const tamperedChild = tamperProof(base.credentials.agreement);
+    const r = await verifyChain({
+      credentials: [forgedRootSpoofed, tamperedChild],
+      policies: [base.mandate, base.agreement],
+    });
+    expect(r.authorized).toBe(false);
+    expect(r.phase).toBe("A");
+    expect(r.code).toBe("INVALID_SIGNATURE");
   });
 
   it("ORDERING: a BAD-PROOF credential with a spoofed subject reports the Phase-A code, not SUBJECT_ISSUER_MISMATCH", async () => {
