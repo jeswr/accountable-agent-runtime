@@ -1,6 +1,6 @@
+import { type VerifyAuthorityResult } from "@jeswr/agent-authz-verifier";
 import type { AgentDiscovery } from "@jeswr/solid-agent-card";
 import type { KeyPair, VerifiableCredential, WebIdKeyResolver } from "@jeswr/solid-vc";
-import { type VerifyAuthorityResult } from "../chain-verifier/index.js";
 import { type OdrlPolicy } from "../odrl.js";
 import { type WrittenArtifact } from "../trace/index.js";
 import { CAST } from "./cast.js";

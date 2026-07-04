@@ -36,7 +36,7 @@
  *
  * @packageDocumentation
  */
-export { PHASE_A_CODES, readBoundAuthorization, verifyAgentAuthority, } from "./chain-verifier/index.js";
+export { PHASE_A_CODES, readBoundAuthorization, verifyAgentAuthority, } from "@jeswr/agent-authz-verifier";
 export { delegationProvenance, evaluateDelegated } from "./odrl.js";
 export { buildAgreement, buildInstituteInternal, buildMandate, buildReadRequest, buildRuntimeProtocolDocument, CAST, generateActorKey, InMemoryPod, MANDATE_STATUS_INDEX, podKeyResolver, podStatusResolver, publishActorKey, RUNTIME_PROTOCOL_ID, runScenario, ScenarioRefusal, VALID_FROM, VALID_UNTIL, } from "./scenario/index.js";
 export { actionProvenance, auditArtifact, decisionRecordQuads, loadTrace, writeActivity, writeDecision, writeEngagement, } from "./trace/index.js";

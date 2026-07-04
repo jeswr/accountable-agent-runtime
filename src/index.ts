@@ -37,7 +37,8 @@
  * @packageDocumentation
  */
 
-// The composed four-phase chain verifier (G7).
+// The composed four-phase chain verifier (G7) — now consumed from the published
+// standalone package rather than vendored in-tree.
 export type {
   BoundAuthorization,
   PresentedChain,
@@ -45,12 +46,12 @@ export type {
   VerifierPhase,
   VerifyAuthorityOptions,
   VerifyAuthorityResult,
-} from "./chain-verifier/index.js";
+} from "@jeswr/agent-authz-verifier";
 export {
   PHASE_A_CODES,
   readBoundAuthorization,
   verifyAgentAuthority,
-} from "./chain-verifier/index.js";
+} from "@jeswr/agent-authz-verifier";
 // The ODRL delegation-profile surface (the G10 seam) + the runtime's RDF helpers,
 // re-exported so consumers of the runtime need not import the seam directly.
 export type {

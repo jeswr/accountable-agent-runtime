@@ -4,12 +4,12 @@
 // fail-closed on cycles / branches / gaps / multi-root / duplicate ids) and the
 // AgentAuthorizationCredential reader.
 
-import { describe, expect, it } from "vitest";
 import {
   type PresentedChain,
   readBoundAuthorization,
   verifyAgentAuthority,
-} from "../src/chain-verifier/index.js";
+} from "@jeswr/agent-authz-verifier";
+import { describe, expect, it } from "vitest";
 import type { OdrlPolicy } from "../src/odrl.js";
 import { runScenario } from "../src/scenario/index.js";
 

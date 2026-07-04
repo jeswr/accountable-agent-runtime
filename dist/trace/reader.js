@@ -15,8 +15,8 @@
 // The walk is a query over parsed RDF; nothing runtime-proprietary is required. It
 // also surfaces the negative demos: a PROV gap (the mirrored-trace divergence a
 // PROV-omitting actor leaves), a recorded-vs-re-run divergence, and the breach.
+import { readBoundAuthorization, verifyAgentAuthority, } from "@jeswr/agent-authz-verifier";
 import { DataFactory, Store } from "n3";
-import { readBoundAuthorization, verifyAgentAuthority, } from "../chain-verifier/index.js";
 import { ODRLD_DELEGATED_UNDER, ODRLD_REVOKED_POLICY, parsePolicy } from "../odrl.js";
 import { AAR_DECISION, AAR_REQUEST_ACTION, AAR_REQUEST_AGENT, AAR_REQUEST_PURPOSE, AAR_REQUEST_TARGET, PROV_ACTED_ON_BEHALF_OF, PROV_HAD_PLAN, PROV_QUALIFIED_ASSOCIATION, PROV_STARTED_AT_TIME, PROV_USED, PROV_WAS_ASSOCIATED_WITH, PROV_WAS_ATTRIBUTED_TO, PROV_WAS_GENERATED_BY, } from "../vocab.js";
 const { namedNode } = DataFactory;

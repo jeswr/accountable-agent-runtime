@@ -1,5 +1,5 @@
+import type { VerifyAuthorityResult } from "@jeswr/agent-authz-verifier";
 import type { Quad } from "@rdfjs/types";
-import type { VerifyAuthorityResult } from "../chain-verifier/index.js";
 import type { RequestContext } from "../odrl.js";
 /** The recorded evaluation decision for one authorization check (a `decisions/<id>.ttl`). */
 export interface DecisionRecordInput {
