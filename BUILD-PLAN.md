@@ -43,12 +43,15 @@ Package follow-ups, in dependency order — each is a separate builder-agent bri
 repo, normal gate + roborev:
 
 1. **solid-odrl: merge `feat/delegation-profile` → main** (G10) and rebuild the committed
-   `dist/`. Prerequisite for everything below.
+   `dist/`. Prerequisite for everything below. **DONE** (merged; runtime pins the sha).
 2. **solid-odrl: `actionProvenance()`** (G8) — the §8 activity-bundle emitter beside
-   `delegationProvenance`; runtime deletes its local authoring.
-3. **solid-vc: policy content binding** (G1) — embedded-Agreement path in
-   `buildAgentAuthorizationCredential` + `relatedResource` digest emission + the verifier digest
-   check; runtime drops the trusted-by-location stub, Phase B gains `POLICY_INTEGRITY` for real.
+   `delegationProvenance`; runtime deletes its local authoring. **DONE** (`solid-odrl` @
+   db97922; `src/trace/activity.ts` deleted, imported via the G10 seam).
+3. **solid-vc: policy content binding** (G1) — `relatedResource` digest emission at issuance +
+   the verifier digest check; runtime drops the trusted-by-location stub, Phase B gains
+   `POLICY_INTEGRITY` for real. **DONE** (`solid-vc` @ 45de2a1; the chain verifier presents
+   each hop's raw policy document, `policyIntegrityProvisional` is `false` on a fully
+   content-bound chain, and the golden matrix pins the enforced verdicts).
 4. **solid-vc: WebID key helpers** (G5) + **document-resolved `isControlledBy`** (G4) — the
    `publishVerificationMethod`/`resolveWebIdKey` pair over `@jeswr/guarded-fetch`.
 5. **solid-vc: Bitstring Status List** (G2) — issuance param + list encode/decode/hosting helper
@@ -58,7 +61,8 @@ repo, normal gate + roborev:
    terms in the runtime (documented, minimal); file the tracking item to re-base on the ODRL CG
    report vocabulary when its namespace lands.
 7. Runtime: swap each stub for the landed API as it merges; extend the golden masters (the
-   matrix rows flip from "provisional" to "enforced", none are deleted).
+   matrix rows flip from "provisional" to "enforced", none are deleted). **DONE for G1/G8/G10**
+   (this repo's Phase-1 integration); G2/G4/G5 swaps follow their upstream items 4–5.
 8. Exit criteria: the scenario runs with **zero gap-stubs except the carrier (G11) and
    countersigning (G15 mirrored-credential pattern documented)**; `chain-verifier/` extraction
    readiness reviewed (→ `@jeswr/agent-authz-verifier` when a second consumer exists).

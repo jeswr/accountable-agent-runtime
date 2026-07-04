@@ -210,8 +210,8 @@ The full call-by-call walk is [`SCENARIO.md`](./SCENARIO.md). The seam table:
 | 0 | keys + publication | `solid-vc` `generateKeyPairForSuite`, `exportPublicJwk` | ✅ / **G5** (no publish/resolve helper) |
 | 0 | agent pointer | `solid-agent-card` `buildAgentPointer(webId, agent)` → write to profile | ✅ |
 | 0 | agent self-description | `solid-agent-card` `describeAgent(descriptor)` → host both docs | ✅ |
-| 1 | mandate P (root Agreement) | `solid-odrl` policy types + `policyToTurtle` (branch: `profile`, `grantUse`, `odrld:delegationDepth`, `nextPolicy` duty round-trip) | ✅ on `feat/delegation-profile` / **G10** (unmerged) |
-| 1 | mint the credential | `solid-vc` `issueAgentAuthorization({principal, agent, action, target, policy}, key)` | ⚠️ **G1** (bare-IRI policy binding only — the note rejects that form) |
+| 1 | mandate P (root Agreement) | `solid-odrl` policy types + `policyToTurtle` (`profile`, `grantUse`, `odrld:delegationDepth`, `nextPolicy` duty round-trip) | ✅ **G10 CLOSED** (delegation profile merged to `solid-odrl` main; pinned by sha) |
+| 1 | mint the credential | `solid-vc` `issueAgentAuthorization({principal, agent, action, target, policy, policyContent}, key)` | ✅ **G1 CLOSED** (Phase 1: `relatedResource` digest binding emitted at issuance + verified fail-closed via `presentedResources`) |
 | 2 | discover the counterparty | `solid-agent-card` `discoverAgent(webId, {fetch})`, `verifyDescriptor`; PD URLs from `descriptor.protocolSources` | ✅ |
 | 3 | pin + verify the protocol | `solid-a2a` `verifyProtocolDocument(fetchedTurtle, hash)` | ✅ / **G11** (no transport — runtime is the carrier) |
 | 3 | upgrade handshake | `solid-a2a` `encodeUpgradeOffer({…, required: true})`, `decodeUpgradeResponse`, `mayDowngradeToNl` | ✅ |
@@ -219,7 +219,7 @@ The full call-by-call walk is [`SCENARIO.md`](./SCENARIO.md). The seam table:
 | 4 | verify the peer's authority | **the four-phase verifier**: `solid-vc` `verifyCredential` (Phase A) + cross-binding (Phase B) + status∪revocation (Phase C) + `solid-odrl` `evaluateDelegated` (Phase D); request via `requestContextFromA2AIntent`; org-assignee actors via the **identity-composition rule** (second chain rooted at the leaf assignee) | **G7** (Phases B–C + assembly + identity composition implemented nowhere; the runtime's one new component) + **G2, G4** |
 | 5 | conclude the Agreement | `solid-odrl` policy types (+ `odrld:delegatedUnder`), `policyToTurtle`; sign via `solid-vc` `issue` | ✅ / **G15** (no countersigning path) |
 | 6 | materialise access | `@solid/object` typed `.acl` accessors (WAC grant: institute WebID, `acl:Read`, target) | ✅ (existing lib) / **G14** (WAC cannot reference the agreement) |
-| 7 | act + record | injected DPoP-authed `fetch`; PROV bundle written via typed accessors + `n3.Writer`; `solid-odrl` `delegationProvenance(chain)` for the overlay | **G8** (no `actionProvenance()` emitter) |
+| 7 | act + record | injected DPoP-authed `fetch`; PROV bundle via `solid-odrl` `actionProvenance` + `delegationProvenance(chain)` for the overlay | ✅ **G8 CLOSED** (Phase 1: `actionProvenance()` shipped in `solid-odrl`; the runtime's local emitter is deleted) |
 | 7 | record the decision | reify `DelegatedEvaluationResult` → RDF | **G9** (no decision-record vocabulary/serialiser) |
 | 8 | audit | PROV walk (SPARQL/typed accessors) + re-run of step 4 | **G7** again + a thin trace reader (runtime-local) |
 
@@ -232,7 +232,12 @@ not newly discovered); the rest are new findings from this design.
 
 **`@jeswr/solid-vc`**
 
-- **G1 — policy content binding.** `buildAgentAuthorizationCredential` emits only a bare-IRI
+- **G1 — policy content binding. CLOSED (Phase 1, `solid-vc` @ 45de2a1).** `relatedResource`
+  digest emission at issuance (`policyContent`) + the fail-closed digest check in
+  `verifyCredential` (`presentedResources`) shipped; the runtime's chain verifier presents each
+  hop's RAW fetched policy document and maps `RELATED_RESOURCE_MISSING`/`_MISMATCH` to a
+  `POLICY_INTEGRITY` deny, so `policyIntegrityProvisional` is `false` on a fully content-bound
+  chain. Original statement (for the record): `buildAgentAuthorizationCredential` emits only a bare-IRI
   `svc:policy`; the credential note **rejects** bare IRI references (a signed pointer to mutable
   content binds nothing). Add: (a) an embedded-Agreement path (the hop policy's RDF carried in
   the credential subject graph, signed with it) and/or (b) `relatedResource` + digest emission,
@@ -278,7 +283,10 @@ not newly discovered); the rest are new findings from this design.
 
 **`@jeswr/solid-odrl`**
 
-- **G8 — `actionProvenance()`.** Profile §8's per-action SHOULD (the `prov:Activity` +
+- **G8 — `actionProvenance()`. CLOSED (Phase 1, `solid-odrl` @ db97922).** Shipped beside
+  `delegationProvenance` with the identical input shape; the runtime deleted its local
+  `trace/activity.ts` and imports it through the G10 seam. Original statement (for the
+  record): Profile §8's per-action SHOULD (the `prov:Activity` +
   `qualifiedAssociation`/`hadPlan` bundle) has no emitter; `delegationProvenance` covers only the
   chain overlay. Add `actionProvenance({activity, agent, used, generated, plan, started, ended})
   → Quad[]` beside it — same file, same discipline, trivially testable.
@@ -290,7 +298,9 @@ not newly discovered); the rest are new findings from this design.
   fail-closed binding target yet. Interim: a minimal decision-record shape under
   `https://w3id.org/jeswr/accountable-agent#` (only the fields above; explicitly marked
   provisional, to be re-based onto the CG vocabulary when it lands). Track the CG draft.
-- **G10 — merge `feat/delegation-profile`.** The entire design depends on the branch @
+- **G10 — merge `feat/delegation-profile`. CLOSED (Phase 1).** Merged to `solid-odrl` `main`
+  with the committed `dist/`; the runtime pins the merged sha. Original statement (for the
+  record): the entire design depends on the branch @
   `18df183`; it is roborev-hardened through four rounds but unmerged. Merging it to `main` (and
   cutting the committed `dist/`) is a prerequisite for Phase 1's real-package wiring.
 
