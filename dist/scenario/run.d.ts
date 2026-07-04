@@ -36,6 +36,16 @@ export interface ScenarioResult {
         readonly agreement: VerifiableCredential;
         readonly instituteAgent: VerifiableCredential;
     };
+    /**
+     * The EXACT policy-document bytes each credential digest-binds (G1) — the same
+     * bytes hosted on the pod and presented to the verifier. Kept on the result so
+     * tests present the true issuance bytes, never a parse→re-emit.
+     */
+    readonly policyDocuments: {
+        readonly mandate: string;
+        readonly agreement: string;
+        readonly instituteInternal: string;
+    };
     readonly wacGrant: WacGrant;
     readonly writtenArtifacts: readonly WrittenArtifact[];
     readonly activityId: string;

@@ -22,8 +22,11 @@ describe("the §4 scenario, end to end", () => {
     // the D9 second chain (rooted at the leaf assignee) authorized the acting agent
     expect(r.verification.actorResult?.authorized).toBe(true);
     expect(r.verification.actorResult?.chainPolicyIds).toEqual([r.cast.instituteInternalId]);
-    // the permit rests on the G1 trusted-by-location policy binding (honest marker)
-    expect(r.verification.policyIntegrityProvisional).toBe(true);
+    // G1 CLOSED (Phase 1): every hop (primary + identity-composition chain) was
+    // content-digest-verified against its credential's signed relatedResource —
+    // the permit no longer rests on trusted-by-location policy binding.
+    expect(r.verification.policyIntegrityProvisional).toBe(false);
+    expect(r.verification.actorResult?.policyIntegrityProvisional).toBe(false);
   });
 
   it("lays down the full trace container (DESIGN §3.1)", async () => {

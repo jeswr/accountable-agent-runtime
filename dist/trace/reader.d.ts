@@ -40,6 +40,15 @@ export interface LoadedTrace {
     readonly graph: Store;
     /** The engagement policies, by IRI. */
     readonly policies: ReadonlyMap<string, OdrlPolicy>;
+    /**
+     * The RAW fetched policy-document bytes, by policy IRI — kept alongside the
+     * parsed form so the re-run can present the EXACT fetched document to the G1
+     * content-digest gate (a parse→re-emit could drop triples the issuer signed).
+     */
+    readonly policyContents: ReadonlyMap<string, {
+        content: string;
+        contentType?: string;
+    }>;
     /** The binding credentials, by the policy IRI each binds (`svc:policy`). */
     readonly credentialsByPolicy: ReadonlyMap<string, VerifiableCredential>;
     /** The recorded decisions (G9), for the recorded-vs-re-run divergence check. */

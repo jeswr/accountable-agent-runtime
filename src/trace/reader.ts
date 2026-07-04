@@ -115,6 +115,12 @@ export interface LoadedTrace {
   readonly graph: Store;
   /** The engagement policies, by IRI. */
   readonly policies: ReadonlyMap<string, OdrlPolicy>;
+  /**
+   * The RAW fetched policy-document bytes, by policy IRI — kept alongside the
+   * parsed form so the re-run can present the EXACT fetched document to the G1
+   * content-digest gate (a parse→re-emit could drop triples the issuer signed).
+   */
+  readonly policyContents: ReadonlyMap<string, { content: string; contentType?: string }>;
   /** The binding credentials, by the policy IRI each binds (`svc:policy`). */
   readonly credentialsByPolicy: ReadonlyMap<string, VerifiableCredential>;
   /** The recorded decisions (G9), for the recorded-vs-re-run divergence check. */
@@ -199,6 +205,7 @@ export async function loadTrace(
   // dereferences to a policy document (the IRI minus its fragment) — no hard-coded
   // filenames, so any chain shape / resource name audits.
   const policies = new Map<string, OdrlPolicy>();
+  const policyContents = new Map<string, { content: string; contentType?: string }>();
   for (const policyIri of credentialsByPolicy.keys()) {
     const docUrl = safePolicyDocUrl(policyIri, options.isPolicyUrlAllowed);
     if (docUrl === undefined) {
@@ -212,6 +219,8 @@ export async function loadTrace(
     const policy = await parsePolicy(res.body, res.contentType, docUrl);
     if (policy?.id !== undefined) {
       policies.set(policy.id, policy);
+      // Keep the RAW fetched bytes for the G1 digest gate (never a re-emit).
+      policyContents.set(policy.id, { content: res.body, contentType: res.contentType });
     }
   }
 
@@ -268,6 +277,7 @@ export async function loadTrace(
     base,
     graph,
     policies,
+    policyContents,
     credentialsByPolicy,
     recordedDecisions,
     revokedPolicies,
@@ -373,6 +383,7 @@ function presentedChain(
 ): PresentedChain | undefined {
   const policies: OdrlPolicy[] = [];
   const credentials: VerifiableCredential[] = [];
+  const policyContents: Record<string, { content: string; contentType?: string }> = {};
   for (const id of policyIds) {
     const policy = trace.policies.get(id);
     const vc = trace.credentialsByPolicy.get(id);
@@ -381,8 +392,14 @@ function presentedChain(
     }
     policies.push(policy);
     credentials.push(vc);
+    // Present the RAW fetched document to the G1 digest gate (it is always present
+    // when the policy is — loadTrace records both from the same fetch).
+    const raw = trace.policyContents.get(id);
+    if (raw !== undefined) {
+      policyContents[id] = raw;
+    }
   }
-  return { policies, credentials };
+  return { policies, credentials, policyContents };
 }
 
 /**

@@ -6,7 +6,7 @@
 // (a fail-open) is caught. Crypto is REAL (a forged signature actually fails to
 // verify); only the pod/clock are doubled.
 
-import type { VerifiableCredential } from "@jeswr/solid-vc";
+import { issueAgentAuthorization, type VerifiableCredential } from "@jeswr/solid-vc";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   type PresentedChain,
@@ -14,7 +14,14 @@ import {
   verifyAgentAuthority,
 } from "../src/chain-verifier/index.js";
 import type { OdrlPolicy, RequestContext } from "../src/odrl.js";
-import { runScenario, type ScenarioResult, sameOriginController } from "../src/scenario/index.js";
+import {
+  generateActorKey,
+  runScenario,
+  type ScenarioResult,
+  sameOriginController,
+  VALID_FROM,
+  VALID_UNTIL,
+} from "../src/scenario/index.js";
 
 /** Deep-clone a credential and flip one character of its proof value (a forged hop). */
 function forge(vc: VerifiableCredential): VerifiableCredential {
@@ -44,15 +51,23 @@ async function verify(overrides: {
   actorChain?: PresentedChain | undefined;
   maxChainLength?: number;
 }): Promise<VerifyAuthorityResult> {
+  // The default chains present the RAW issuance policy bytes (G1 enforced path).
   const primary: PresentedChain = overrides.primary ?? {
     credentials: [base.credentials.mandate, base.credentials.agreement],
     policies: [base.mandate, base.agreement],
+    policyContents: {
+      [base.cast.mandateId]: { content: base.policyDocuments.mandate },
+      [base.cast.agreementId]: { content: base.policyDocuments.agreement },
+    },
   };
   const actorChain: PresentedChain =
     overrides.actorChain ??
     ({
       credentials: [base.credentials.instituteAgent],
       policies: [base.instituteInternal],
+      policyContents: {
+        [base.cast.instituteInternalId]: { content: base.policyDocuments.instituteInternal },
+      },
     } as PresentedChain);
   return verifyAgentAuthority(primary, {
     request:
@@ -142,6 +157,92 @@ describe("the four-phase chain verifier — golden-master decision matrix", () =
     const r = await verify({ rootPrincipal: "https://attacker.example/profile#me" });
     expect(r.phase).toBe("B");
     expect(r.code).toBe("BINDING_MISMATCH");
+  });
+
+  it("POLICY SUBSTITUTED (G1, enforced): presented policy content ≠ the signed digest → Phase B POLICY_INTEGRITY", async () => {
+    // The credentials are genuine, but the agreement hop is PRESENTED with a
+    // different policy document (here: the mandate's bytes) — the substitution the
+    // bare-IRI binding could not catch. The signed relatedResource digest no longer
+    // matches → deny, fail-closed.
+    const r = await verify({
+      primary: {
+        credentials: [base.credentials.mandate, base.credentials.agreement],
+        policies: [base.mandate, base.agreement],
+        policyContents: {
+          [base.cast.mandateId]: { content: base.policyDocuments.mandate },
+          [base.cast.agreementId]: { content: base.policyDocuments.mandate }, // substituted
+        },
+      },
+    });
+    expect(r.authorized).toBe(false);
+    expect(r.phase).toBe("B");
+    expect(r.code).toBe("POLICY_INTEGRITY");
+  });
+
+  it("POLICY UNBOUND (G1, enforced): content presented but the credential carries NO digest → Phase B POLICY_INTEGRITY", async () => {
+    // A bare-IRI credential (no policyContent at issuance) presented WITH content:
+    // solid-vc fails closed with RELATED_RESOURCE_MISSING — there is no signed
+    // digest to check the presented document against.
+    const k2 = await generateActorKey("https://agent-a.example/keys#k2");
+    base.keyRing.register(k2);
+    const unboundAgreementVc = await issueAgentAuthorization(
+      {
+        principal: base.cast.agentA,
+        agent: base.cast.inst,
+        action: "read",
+        target: base.cast.records,
+        policy: base.cast.agreementId,
+        validFrom: VALID_FROM,
+        validUntil: VALID_UNTIL,
+      },
+      k2,
+    );
+    const r = await verify({
+      primary: {
+        credentials: [base.credentials.mandate, unboundAgreementVc],
+        policies: [base.mandate, base.agreement],
+        policyContents: {
+          [base.cast.mandateId]: { content: base.policyDocuments.mandate },
+          [base.cast.agreementId]: { content: base.policyDocuments.agreement },
+        },
+      },
+    });
+    expect(r.authorized).toBe(false);
+    expect(r.phase).toBe("B");
+    expect(r.code).toBe("POLICY_INTEGRITY");
+  });
+
+  it("CONTENT NOT PRESENTED (G1): a chain without raw policy content still permits, but stays policyIntegrityProvisional", async () => {
+    const r = await verify({
+      primary: {
+        credentials: [base.credentials.mandate, base.credentials.agreement],
+        policies: [base.mandate, base.agreement],
+      },
+      actorChain: {
+        credentials: [base.credentials.instituteAgent],
+        policies: [base.instituteInternal],
+      },
+    });
+    expect(r.authorized).toBe(true);
+    expect(r.policyIntegrityProvisional).toBe(true);
+  });
+
+  it("HAPPY (G1 enforced): the fully content-bound chain's permit is NOT provisional", async () => {
+    const r = await verify({});
+    expect(r.authorized).toBe(true);
+    expect(r.policyIntegrityProvisional).toBe(false);
+    expect(r.actorResult?.policyIntegrityProvisional).toBe(false);
+  });
+
+  it("PROVISIONAL PROPAGATES: a content-bound primary chain with a location-trusted ACTOR chain stays provisional", async () => {
+    const r = await verify({
+      actorChain: {
+        credentials: [base.credentials.instituteAgent],
+        policies: [base.instituteInternal],
+      },
+    });
+    expect(r.authorized).toBe(true);
+    expect(r.policyIntegrityProvisional).toBe(true);
   });
 
   it("REVOKED: a revoked chain hop → Phase C REVOKED", async () => {
@@ -294,14 +395,48 @@ describe("the four-phase chain verifier — golden-master decision matrix", () =
       ],
       ["over-length", verify({ maxChainLength: 1 })],
       ["identity-composition-missing", verify({ actor: base.cast.agentR, actorChain: undefined })],
+      // G1 flipped provisional → ENFORCED (Phase 1): the matrix gains the two
+      // content-binding verdicts and every row now pins `provisional` (the
+      // policyIntegrityProvisional marker). Existing rows' authorized/phase/code
+      // verdicts are UNCHANGED — the check is strictly additive.
+      [
+        "policy-substituted",
+        verify({
+          primary: {
+            credentials: [base.credentials.mandate, base.credentials.agreement],
+            policies: [base.mandate, base.agreement],
+            policyContents: {
+              [base.cast.mandateId]: { content: base.policyDocuments.mandate },
+              [base.cast.agreementId]: { content: base.policyDocuments.mandate },
+            },
+          },
+        }),
+      ],
+      [
+        "content-not-presented",
+        verify({
+          primary: {
+            credentials: [base.credentials.mandate, base.credentials.agreement],
+            policies: [base.mandate, base.agreement],
+          },
+          actorChain: {
+            credentials: [base.credentials.instituteAgent],
+            policies: [base.instituteInternal],
+          },
+        }),
+      ],
     ];
-    const matrix: Record<string, { authorized: boolean; phase: string; code?: string }> = {};
+    const matrix: Record<
+      string,
+      { authorized: boolean; phase: string; code?: string; provisional: boolean }
+    > = {};
     for (const [name, p] of rows) {
       const r = await p;
       matrix[name] = {
         authorized: r.authorized,
         phase: r.phase,
         ...(r.code !== undefined && { code: r.code }),
+        provisional: r.policyIntegrityProvisional,
       };
     }
     expect(matrix).toMatchSnapshot();

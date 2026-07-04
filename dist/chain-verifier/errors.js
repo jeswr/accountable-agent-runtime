@@ -16,4 +16,13 @@ export const PHASE_A_CODES = new Set([
     "PROOF_PURPOSE_MISMATCH",
     "UNTRUSTED_ISSUER",
 ]);
+/**
+ * The `@jeswr/solid-vc` codes of the G1 policy-content digest gate (raised by the
+ * `presentedResources` option of `verifyCredential`). The composed verifier maps
+ * either to a `POLICY_INTEGRITY` deny — the credential↔policy-content binding broke.
+ */
+export const RELATED_RESOURCE_CODES = new Set([
+    "RELATED_RESOURCE_MISSING",
+    "RELATED_RESOURCE_MISMATCH",
+]);
 //# sourceMappingURL=errors.js.map

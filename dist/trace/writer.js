@@ -6,9 +6,8 @@
 // the per-action bundle via G8's `actionProvenance`, the decision record via G9 —
 // never a hand-built triple. The pod is an injectable {@link ResourceSink} (Phase 0
 // an in-memory double; Phase 2 a DPoP-authed `fetch`).
-import { delegationProvenance, policyToTurtle } from "../odrl.js";
+import { actionProvenance, delegationProvenance, policyToTurtle } from "../odrl.js";
 import { canonicalize, parseTurtle, serializeTurtle } from "../rdf.js";
-import { actionProvenance } from "./activity.js";
 import { decisionRecordQuads } from "./decision-record.js";
 function join(base, path) {
     return base.endsWith("/") ? `${base}${path}` : `${base}/${path}`;
