@@ -25,7 +25,7 @@ export const RUNTIME_PROTOCOL_ID = "https://institute.example/protocols/data-sha
  * SHACL-validated against. Deterministic: the same logical document yields the
  * same `hash` across runs (content-addressed).
  */
-export function buildRuntimeProtocolDocument(): ProtocolDocument {
+export async function buildRuntimeProtocolDocument(): Promise<ProtocolDocument> {
   return buildProtocolDocument({
     requestShape: buildShapeForIntent("grant"),
     meta: {

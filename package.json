@@ -29,10 +29,10 @@
   },
   "dependencies": {
     "@jeswr/fetch-rdf": "^0.1.0",
-    "@jeswr/solid-a2a": "git+https://github.com/jeswr/solid-a2a.git#51ca252c63db03e1b6b087c940b839a99b2ee762",
-    "@jeswr/solid-agent-card": "git+https://github.com/jeswr/solid-agent-card.git#26ce9bb6b44a019595fc58ad4afaa3c0e6a60014",
-    "@jeswr/solid-odrl": "git+https://github.com/jeswr/solid-odrl.git#18df183564e86d144da1ee874706750f441d0c70",
-    "@jeswr/solid-vc": "git+https://github.com/jeswr/solid-vc.git#895136830208b5b1aba7db2941307e03371e1d6d",
+    "@jeswr/solid-a2a": "git+https://github.com/jeswr/solid-a2a.git#e5ff315c2c4c44eb1d83679c22da95696f3ba8b7",
+    "@jeswr/solid-agent-card": "git+https://github.com/jeswr/solid-agent-card.git#c94b78e85a606fc96f5e2bea6a2204699dc23e96",
+    "@jeswr/solid-odrl": "git+https://github.com/jeswr/solid-odrl.git#05849c6e248e1174b30a6222924d63929789c05a",
+    "@jeswr/solid-vc": "git+https://github.com/jeswr/solid-vc.git#5a1def486aad484bf192f9764379cb89c61c1d31",
     "@rdfjs/wrapper": "^0.34.0",
     "n3": "^2.0.3"
   },
