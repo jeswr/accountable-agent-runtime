@@ -7,7 +7,7 @@
 import { describe, expect, it } from "vitest";
 import { ODRLD_REVOCATION_CLASS, ODRLD_REVOKED_POLICY } from "../src/odrl.js";
 import { GraphBuilder, serializeTurtle } from "../src/rdf.js";
-import { runScenario, sameOriginController } from "../src/scenario/index.js";
+import { podKeyResolver, podStatusResolver, runScenario } from "../src/scenario/index.js";
 import { auditArtifact, loadTrace, writeDecision } from "../src/trace/index.js";
 
 describe("audit re-run fidelity", () => {
@@ -40,8 +40,8 @@ describe("audit re-run fidelity", () => {
     });
     const trace = await loadTrace(r.pod, r.cast.engagementBase);
     const audit = await auditArtifact(trace, r.cast.derivedArtifact, {
-      resolveKey: r.keyRing.resolveKey,
-      isControlledBy: sameOriginController,
+      ...podKeyResolver(r.pod),
+      resolveStatus: podStatusResolver(r.pod, { now: r.now }),
     });
     expect(audit.reRun?.authorized).toBe(false);
     expect(audit.reRun?.code).toBe("POLICY_DENIED");
@@ -113,8 +113,8 @@ describe("audit re-run fidelity", () => {
       trace.recordedDecisions.find((d) => d.requestTarget === r.cast.records)?.requestPurpose,
     ).toBeUndefined();
     const audit = await auditArtifact(trace, r.cast.derivedArtifact, {
-      resolveKey: r.keyRing.resolveKey,
-      isControlledBy: sameOriginController,
+      ...podKeyResolver(r.pod),
+      resolveStatus: podStatusResolver(r.pod, { now: r.now }),
     });
     // the agreement's read permission is purpose-constrained → no purpose denies
     expect(audit.reRun?.authorized).toBe(false);
@@ -139,8 +139,8 @@ describe("audit re-run fidelity", () => {
     expect(trace.revokedPolicies).toContain(r.cast.agreementId);
     // No options.revoked supplied — the trace-published revocation must still deny.
     const audit = await auditArtifact(trace, r.cast.derivedArtifact, {
-      resolveKey: r.keyRing.resolveKey,
-      isControlledBy: sameOriginController,
+      ...podKeyResolver(r.pod),
+      resolveStatus: podStatusResolver(r.pod, { now: r.now }),
     });
     expect(audit.reRun?.authorized).toBe(false);
     expect(audit.reRun?.code).toBe("REVOKED");

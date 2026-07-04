@@ -22,10 +22,14 @@
 //              a subject of) that hop's `odrl:assigner`; the delegate it authorizes
 //              is the NEXT hop's assigner; the ROOT credential's issuer is the
 //              trusted root principal for the target.
-//   Phase C  — status ∪ revocation, fail-closed: any chain policy in the revoked
-//              set (Phase 0/1: `odrld:Revocation` fixtures; G2 defers the Bitstring
-//              status-list gate) → deny; an UNREACHABLE status source → deny
-//              (`STATUS_RETRIEVAL_ERROR`, the note's fail-closed rule).
+//   Phase C  — status ∪ revocation, fail-closed (G2: REAL since Phase 1): each hop
+//              credential's W3C Bitstring Status List entry is resolved through
+//              solid-vc's `resolveStatus` seam (fetched SSRF-guarded, the list's own
+//              signature verified, the bit read) — a set bit → `REVOKED`/`SUSPENDED`;
+//              an unconfirmable entry, OR an entry present with NO resolver supplied,
+//              → `STATUS_RETRIEVAL_ERROR` (the note's "retrieval failure must deny").
+//              Additionally any chain policy in the `odrld:Revocation` revoked set
+//              (the delegation profile's POLICY-level mechanism) → deny.
 //   Phase D  — `solid-odrl.evaluateDelegated` over the ordered chain (the G10 seam):
 //              in-scope intersection, unexpired, unrevoked, depth-bounded, acyclic.
 //
@@ -48,6 +52,7 @@ import { SVC_ACTION, SVC_AUTHORIZES, SVC_POLICY, SVC_TARGET } from "../vocab.js"
 import {
   PHASE_A_CODES,
   RELATED_RESOURCE_CODES,
+  STATUS_GATE_CODES,
   type VerifierErrorCode,
   type VerifierPhase,
 } from "./errors.js";
@@ -97,17 +102,46 @@ export interface VerifyAuthorityOptions {
   readonly rootPrincipal: string;
   /** The single evaluation instant across all phases (the note's one-instant rule). */
   readonly now: Date;
-  /** Resolve a `verificationMethod` IRI to a public `CryptoKey` (G5: runtime-supplied). */
+  /**
+   * Resolve a `verificationMethod` IRI to a public `CryptoKey` (G5, REAL since
+   * Phase 1): pass solid-vc's `createWebIdKeyResolver().resolveKey` for the
+   * fail-closed WebID-document resolution.
+   */
   readonly resolveKey: VerifyCredentialOptions["resolveKey"];
-  /** Document-resolved issuer↔key controller check (G4). Defaults to solid-vc's heuristic. */
+  /**
+   * The issuer↔key controller check (G4, REAL since Phase 1): pass the SAME
+   * `createWebIdKeyResolver()` instance's `isControlledBy` for the fail-closed
+   * two-directional document resolution. When omitted, solid-vc falls back to
+   * its documented prefix heuristic — acceptable only for closed test setups.
+   */
   readonly isControlledBy?: VerifyCredentialOptions["isControlledBy"];
-  /** Phase C: policy IRIs known revoked (G2: `odrld:Revocation` fixtures only in Phase 0/1). */
+  /**
+   * Phase C, the POLICY-level revocation input: policy IRIs revoked via the
+   * delegation profile's `odrld:Revocation` (e.g. published in the trace's
+   * `revocations.ttl`). Distinct from — and consulted IN ADDITION TO — the
+   * credential-level Bitstring status gate (`resolveStatus`).
+   */
   readonly revoked?: readonly string[];
   /**
-   * Phase C fail-closed hook: a status/revocation source that could not be
-   * retrieved. When `true`, the verifier denies with `STATUS_RETRIEVAL_ERROR`
-   * (the note's "retrieval failure must deny"). Phase 0 supplies the revoked set
-   * directly, so this is the seam Phase 1's Bitstring-status fetch reports through.
+   * Phase C, the CREDENTIAL-level status gate (G2, REAL since Phase 1): solid-vc's
+   * `resolveStatus` seam — pass `createBitstringStatusResolver(…)` and every hop
+   * credential's W3C Bitstring Status List entry is fetched (SSRF-guarded,
+   * redirects refused, byte-bounded), ITS OWN signature verified, and the bit
+   * read. FAIL-CLOSED end to end:
+   *  - a set bit → the Phase-C `REVOKED` / `SUSPENDED` deny;
+   *  - an entry that cannot be confirmed → `STATUS_RETRIEVAL_ERROR`;
+   *  - a hop credential that CARRIES a `credentialStatus` entry while this
+   *    option is ABSENT → `STATUS_RETRIEVAL_ERROR` (a status mechanism nobody
+   *    checked must never read as "not revoked");
+   *  - only a credential with NO `credentialStatus` passes without the gate.
+   */
+  readonly resolveStatus?: VerifyCredentialOptions["resolveStatus"];
+  /**
+   * Phase C fail-closed hook: an EXTERNAL status/revocation source that could not
+   * be retrieved (e.g. the trace's revocation list failed to load). When `true`,
+   * the verifier denies with `STATUS_RETRIEVAL_ERROR` (the note's "retrieval
+   * failure must deny"). The Bitstring gate reports its own retrieval failures
+   * through `resolveStatus` — this flag is for sources OUTSIDE the verifier.
    */
   readonly statusUnreachable?: boolean;
   /** Gate the permit on the AGGREGATE chain duties being discharged (Phase D). */
@@ -400,9 +434,21 @@ export async function verifyAgentAuthority(
     // biome-ignore lint/style/noNonNullAssertion: every hop bound (checked above)
     const b = bound.get(hop.id)!;
     const presented: PresentedResourceContent | undefined = contents[hop.id];
+    // G2 fail-closed: a credential CARRYING a status entry, verified WITHOUT a
+    // status resolver, must deny — a status mechanism nobody checked must never
+    // read as "not revoked". (An entry-less credential passes without the gate.)
+    if (options.resolveStatus === undefined && b.vc.credentialStatus !== undefined) {
+      return deny(
+        "C",
+        "STATUS_RETRIEVAL_ERROR",
+        `Credential for hop <${hop.id}> carries a credentialStatus entry but no status resolver was supplied — denying (fail-closed).`,
+        chainIds,
+      );
+    }
     const res = await verifyCredential(b.vc, {
       resolveKey,
       ...(options.isControlledBy !== undefined && { isControlledBy: options.isControlledBy }),
+      ...(options.resolveStatus !== undefined && { resolveStatus: options.resolveStatus }),
       expectedProofPurpose: "assertionMethod",
       now,
       ...(presented !== undefined && { presentedResources: { [hop.id]: presented } }),
@@ -411,13 +457,29 @@ export async function verifyAgentAuthority(
       const detail = res.errors.map((e) => e.message).join("; ");
       // A genuine Phase-A failure (signature/validity/issuer/…) always wins; a
       // PURE digest-binding failure is the G1 `POLICY_INTEGRITY` deny (Phase B
-      // semantics — the credential↔policy-content cross-binding broke).
+      // semantics — the credential↔policy-content cross-binding broke); a PURE
+      // status failure is the G2 Phase-C deny (status ∪ revocation, fail-closed).
       const phaseAError = res.errors.find((e) => PHASE_A_CODES.has(e.code as VerifierErrorCode));
       if (phaseAError === undefined && res.errors.some((e) => RELATED_RESOURCE_CODES.has(e.code))) {
         return deny(
           "B",
           "POLICY_INTEGRITY",
           `Policy-content binding failed for <${hop.id}>: ${detail}`,
+          chainIds,
+        );
+      }
+      const statusError = res.errors.find((e) => STATUS_GATE_CODES.has(e.code));
+      if (phaseAError === undefined && statusError !== undefined) {
+        const statusCode: VerifierErrorCode =
+          statusError.code === "STATUS_REVOKED"
+            ? "REVOKED"
+            : statusError.code === "STATUS_SUSPENDED"
+              ? "SUSPENDED"
+              : "STATUS_RETRIEVAL_ERROR";
+        return deny(
+          "C",
+          statusCode,
+          `Credential status gate failed for hop <${hop.id}>: ${detail}`,
           chainIds,
         );
       }
@@ -513,6 +575,9 @@ export async function verifyAgentAuthority(
   }
 
   // --- Phase C: status ∪ revocation, fail-closed ---------------------------
+  // The CREDENTIAL-level Bitstring status gate (G2) ran per hop above (inside the
+  // credential-verification loop, reported with Phase-C semantics); here the
+  // POLICY-level `odrld:Revocation` set + the external-source flag are consulted.
   if (options.statusUnreachable === true) {
     return deny(
       "C",
@@ -570,6 +635,7 @@ export async function verifyAgentAuthority(
       now,
       resolveKey,
       ...(options.isControlledBy !== undefined && { isControlledBy: options.isControlledBy }),
+      ...(options.resolveStatus !== undefined && { resolveStatus: options.resolveStatus }),
       ...(options.revoked !== undefined && { revoked: options.revoked }),
       ...(options.statusUnreachable !== undefined && {
         statusUnreachable: options.statusUnreachable,

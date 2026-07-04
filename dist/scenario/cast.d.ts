@@ -2,6 +2,8 @@ import type { OdrlPolicy, RequestContext } from "../odrl.js";
 /** The fixed evaluation windows used throughout (a one-year grant). */
 export declare const VALID_FROM: "2026-07-03T00:00:00Z";
 export declare const VALID_UNTIL: "2027-07-03T00:00:00Z";
+/** The mandate credential's bit position in Alice's revocation status list (G2). */
+export declare const MANDATE_STATUS_INDEX = 42;
 /** The cast IRIs (SCENARIO). */
 export declare const CAST: {
     readonly alice: "https://alice.solid.example/profile/card#me";
@@ -22,6 +24,7 @@ export declare const CAST: {
     readonly mandateId: "https://alice.solid.example/agents/engagements/e1/mandate.ttl#policy";
     readonly agreementId: "https://alice.solid.example/agents/engagements/e1/agreement.ttl#policy";
     readonly instituteInternalId: "https://institute.example/policies/internal-e1.ttl#policy";
+    readonly statusListUrl: "https://alice.solid.example/status/e1-revocation.json";
     readonly derivedArtifact: "https://institute.example/derived/summary-2027.ttl";
 };
 /** The root mandate P (Alice → agent A: read + a depth-1 grantUse, distribute prohibited). */

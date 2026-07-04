@@ -41,6 +41,18 @@ exports[`the four-phase chain verifier — golden-master decision matrix > GOLDE
     "phase": "composition",
     "provisional": false,
   },
+  "key-not-issuer-controlled": {
+    "authorized": false,
+    "code": "ISSUER_MISMATCH",
+    "phase": "A",
+    "provisional": false,
+  },
+  "key-unresolvable": {
+    "authorized": false,
+    "code": "ISSUER_MISMATCH",
+    "phase": "A",
+    "provisional": false,
+  },
   "not-yet-valid": {
     "authorized": false,
     "code": "NOT_YET_VALID",
@@ -66,6 +78,24 @@ exports[`the four-phase chain verifier — golden-master decision matrix > GOLDE
     "provisional": false,
   },
   "revoked": {
+    "authorized": false,
+    "code": "REVOKED",
+    "phase": "C",
+    "provisional": false,
+  },
+  "status-list-unreachable": {
+    "authorized": false,
+    "code": "STATUS_RETRIEVAL_ERROR",
+    "phase": "C",
+    "provisional": false,
+  },
+  "status-resolver-missing": {
+    "authorized": false,
+    "code": "STATUS_RETRIEVAL_ERROR",
+    "phase": "C",
+    "provisional": false,
+  },
+  "status-revoked": {
     "authorized": false,
     "code": "REVOKED",
     "phase": "C",

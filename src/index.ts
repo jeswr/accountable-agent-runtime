@@ -18,14 +18,21 @@
  * verifier, the trace writer/reader, and the scripted scenario.
  *
  * The GAP LIST (G1–G15, DESIGN §4) is honoured with LABELLED stubs, never hidden
- * ones. CLOSED in Phase 1: G1 (policy-content digest binding — `solid-vc`
- * `relatedResource` digests verified fail-closed via `presentedResources`; a
- * fully content-bound chain's permit is no longer `policyIntegrityProvisional`),
- * G8 (`actionProvenance` imported from `@jeswr/solid-odrl`), G10 (the delegation
- * profile is merged to `solid-odrl` main). Still open, labelled: G9 a provisional
- * decision-record shape, G11 the in-process carrier, G12 no stock purpose/period
- * shape, G14 the WAC↔agreement linkage recorded in the decision record only,
- * G15 countersigning (mirrored-credential pattern documented).
+ * ones. CLOSED in Phase 1 — the four-phase verifier is now STUB-FREE: G1
+ * (policy-content digest binding — `solid-vc` `relatedResource` digests verified
+ * fail-closed via `presentedResources`; a fully content-bound chain's permit is
+ * no longer `policyIntegrityProvisional`), G2 (the W3C Bitstring Status List
+ * gate — Phase C resolves each hop credential's status through solid-vc's
+ * `resolveStatus` seam, fail-closed, incl. the resolver-missing case), G4/G5
+ * (keys publish into and document-resolve from WebID documents via
+ * `publishVerificationMethod` / `createWebIdKeyResolver`; the KeyRing and
+ * same-origin-controller stubs are deleted), G8 (`actionProvenance` imported
+ * from `@jeswr/solid-odrl`), G10 (the delegation profile is merged to
+ * `solid-odrl` main). Still open, labelled: G9 a provisional decision-record
+ * VOCABULARY (the shape is real; the terms await the ODRL CG report namespace),
+ * G11 the in-process carrier (Phase 2), G12 no stock purpose/period shape,
+ * G14 the WAC↔agreement linkage recorded in the decision record only,
+ * G15 countersigning (mirrored-credential pattern documented; Phase 2).
  *
  * @packageDocumentation
  */
@@ -68,11 +75,13 @@ export {
   CAST,
   generateActorKey,
   InMemoryPod,
-  KeyRing,
+  MANDATE_STATUS_INDEX,
+  podKeyResolver,
+  podStatusResolver,
+  publishActorKey,
   RUNTIME_PROTOCOL_ID,
   runScenario,
   ScenarioRefusal,
-  sameOriginController,
   VALID_FROM,
   VALID_UNTIL,
 } from "./scenario/index.js";

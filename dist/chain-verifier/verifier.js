@@ -22,10 +22,14 @@
 //              a subject of) that hop's `odrl:assigner`; the delegate it authorizes
 //              is the NEXT hop's assigner; the ROOT credential's issuer is the
 //              trusted root principal for the target.
-//   Phase C  — status ∪ revocation, fail-closed: any chain policy in the revoked
-//              set (Phase 0/1: `odrld:Revocation` fixtures; G2 defers the Bitstring
-//              status-list gate) → deny; an UNREACHABLE status source → deny
-//              (`STATUS_RETRIEVAL_ERROR`, the note's fail-closed rule).
+//   Phase C  — status ∪ revocation, fail-closed (G2: REAL since Phase 1): each hop
+//              credential's W3C Bitstring Status List entry is resolved through
+//              solid-vc's `resolveStatus` seam (fetched SSRF-guarded, the list's own
+//              signature verified, the bit read) — a set bit → `REVOKED`/`SUSPENDED`;
+//              an unconfirmable entry, OR an entry present with NO resolver supplied,
+//              → `STATUS_RETRIEVAL_ERROR` (the note's "retrieval failure must deny").
+//              Additionally any chain policy in the `odrld:Revocation` revoked set
+//              (the delegation profile's POLICY-level mechanism) → deny.
 //   Phase D  — `solid-odrl.evaluateDelegated` over the ordered chain (the G10 seam):
 //              in-scope intersection, unexpired, unrevoked, depth-bounded, acyclic.
 //
@@ -38,7 +42,7 @@
 import { verifyCredential } from "@jeswr/solid-vc";
 import { evaluateDelegated } from "../odrl.js";
 import { SVC_ACTION, SVC_AUTHORIZES, SVC_POLICY, SVC_TARGET } from "../vocab.js";
-import { PHASE_A_CODES, RELATED_RESOURCE_CODES, } from "./errors.js";
+import { PHASE_A_CODES, RELATED_RESOURCE_CODES, STATUS_GATE_CODES, } from "./errors.js";
 // --- reading the bound authorization from a credential ---------------------
 /** The credentialSubject as a claim record (first subject if an array). */
 function subjectRecord(vc) {
@@ -227,9 +231,16 @@ export async function verifyAgentAuthority(chain, options) {
         // biome-ignore lint/style/noNonNullAssertion: every hop bound (checked above)
         const b = bound.get(hop.id);
         const presented = contents[hop.id];
+        // G2 fail-closed: a credential CARRYING a status entry, verified WITHOUT a
+        // status resolver, must deny — a status mechanism nobody checked must never
+        // read as "not revoked". (An entry-less credential passes without the gate.)
+        if (options.resolveStatus === undefined && b.vc.credentialStatus !== undefined) {
+            return deny("C", "STATUS_RETRIEVAL_ERROR", `Credential for hop <${hop.id}> carries a credentialStatus entry but no status resolver was supplied — denying (fail-closed).`, chainIds);
+        }
         const res = await verifyCredential(b.vc, {
             resolveKey,
             ...(options.isControlledBy !== undefined && { isControlledBy: options.isControlledBy }),
+            ...(options.resolveStatus !== undefined && { resolveStatus: options.resolveStatus }),
             expectedProofPurpose: "assertionMethod",
             now,
             ...(presented !== undefined && { presentedResources: { [hop.id]: presented } }),
@@ -238,10 +249,20 @@ export async function verifyAgentAuthority(chain, options) {
             const detail = res.errors.map((e) => e.message).join("; ");
             // A genuine Phase-A failure (signature/validity/issuer/…) always wins; a
             // PURE digest-binding failure is the G1 `POLICY_INTEGRITY` deny (Phase B
-            // semantics — the credential↔policy-content cross-binding broke).
+            // semantics — the credential↔policy-content cross-binding broke); a PURE
+            // status failure is the G2 Phase-C deny (status ∪ revocation, fail-closed).
             const phaseAError = res.errors.find((e) => PHASE_A_CODES.has(e.code));
             if (phaseAError === undefined && res.errors.some((e) => RELATED_RESOURCE_CODES.has(e.code))) {
                 return deny("B", "POLICY_INTEGRITY", `Policy-content binding failed for <${hop.id}>: ${detail}`, chainIds);
+            }
+            const statusError = res.errors.find((e) => STATUS_GATE_CODES.has(e.code));
+            if (phaseAError === undefined && statusError !== undefined) {
+                const statusCode = statusError.code === "STATUS_REVOKED"
+                    ? "REVOKED"
+                    : statusError.code === "STATUS_SUSPENDED"
+                        ? "SUSPENDED"
+                        : "STATUS_RETRIEVAL_ERROR";
+                return deny("C", statusCode, `Credential status gate failed for hop <${hop.id}>: ${detail}`, chainIds);
             }
             const code = phaseAError !== undefined ? phaseAError.code : "INVALID_SIGNATURE";
             return deny("A", code, `Phase A (credential verification) failed: ${detail}`, chainIds);
@@ -301,6 +322,9 @@ export async function verifyAgentAuthority(chain, options) {
         return deny("B", "BINDING_MISMATCH", `Chain leaf assignee <${leafAssignee}> ≠ the required party <${options.requireLeafAssignee}>.`, chainIds);
     }
     // --- Phase C: status ∪ revocation, fail-closed ---------------------------
+    // The CREDENTIAL-level Bitstring status gate (G2) ran per hop above (inside the
+    // credential-verification loop, reported with Phase-C semantics); here the
+    // POLICY-level `odrld:Revocation` set + the external-source flag are consulted.
     if (options.statusUnreachable === true) {
         return deny("C", "STATUS_RETRIEVAL_ERROR", "A revocation/status source could not be retrieved — denying (fail-closed).", chainIds);
     }
@@ -345,6 +369,7 @@ export async function verifyAgentAuthority(chain, options) {
             now,
             resolveKey,
             ...(options.isControlledBy !== undefined && { isControlledBy: options.isControlledBy }),
+            ...(options.resolveStatus !== undefined && { resolveStatus: options.resolveStatus }),
             ...(options.revoked !== undefined && { revoked: options.revoked }),
             ...(options.statusUnreachable !== undefined && {
                 statusUnreachable: options.statusUnreachable,

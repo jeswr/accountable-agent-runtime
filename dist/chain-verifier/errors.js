@@ -25,4 +25,16 @@ export const RELATED_RESOURCE_CODES = new Set([
     "RELATED_RESOURCE_MISSING",
     "RELATED_RESOURCE_MISMATCH",
 ]);
+/**
+ * The `@jeswr/solid-vc` codes of the G2 Bitstring Status List gate (raised by the
+ * `resolveStatus` option of `verifyCredential`). The composed verifier maps each to
+ * its Phase-C deny: `STATUS_REVOKED` → `REVOKED`, `STATUS_SUSPENDED` → `SUSPENDED`,
+ * `STATUS_UNREACHABLE` → `STATUS_RETRIEVAL_ERROR` (the note's "retrieval failure
+ * must deny" fail-closed rule).
+ */
+export const STATUS_GATE_CODES = new Set([
+    "STATUS_REVOKED",
+    "STATUS_SUSPENDED",
+    "STATUS_UNREACHABLE",
+]);
 //# sourceMappingURL=errors.js.map

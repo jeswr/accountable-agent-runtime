@@ -33,6 +33,11 @@ export class InMemoryPod implements ResourceSink, ResourceSource {
     return this.store.has(url);
   }
 
+  /** Remove a resource (subsequent fetches 404 — e.g. an unreachable status list). */
+  delete(url: string): void {
+    this.store.delete(url);
+  }
+
   /** Every stored URL beginning with `prefix` (a container listing). */
   list(prefix: string): string[] {
     return [...this.store.keys()].filter((url) => url.startsWith(prefix));

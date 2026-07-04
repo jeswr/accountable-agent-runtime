@@ -6,7 +6,12 @@
 // (a fail-open) is caught. Crypto is REAL (a forged signature actually fails to
 // verify); only the pod/clock are doubled.
 
-import { issueAgentAuthorization, type VerifiableCredential } from "@jeswr/solid-vc";
+import {
+  issue,
+  issueAgentAuthorization,
+  type VerifiableCredential,
+  withStatusBit,
+} from "@jeswr/solid-vc";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   type PresentedChain,
@@ -16,9 +21,11 @@ import {
 import type { OdrlPolicy, RequestContext } from "../src/odrl.js";
 import {
   generateActorKey,
+  podKeyResolver,
+  podStatusResolver,
+  publishActorKey,
   runScenario,
   type ScenarioResult,
-  sameOriginController,
   VALID_FROM,
   VALID_UNTIL,
 } from "../src/scenario/index.js";
@@ -50,6 +57,8 @@ async function verify(overrides: {
   actor?: string | undefined;
   actorChain?: PresentedChain | undefined;
   maxChainLength?: number;
+  /** `undefined` (with the key present) = NO status resolver — the fail-closed case. */
+  resolveStatus?: ReturnType<typeof podStatusResolver> | undefined;
 }): Promise<VerifyAuthorityResult> {
   // The default chains present the RAW issuance policy bytes (G1 enforced path).
   const primary: PresentedChain = overrides.primary ?? {
@@ -69,6 +78,9 @@ async function verify(overrides: {
         [base.cast.instituteInternalId]: { content: base.policyDocuments.instituteInternal },
       },
     } as PresentedChain);
+  // A FRESH document-resolving pair per call (G4/G5 real): the resolver caches
+  // documents for its lifetime, and several cases mutate the pod's documents.
+  const keyResolver = podKeyResolver(base.pod);
   return verifyAgentAuthority(primary, {
     request:
       overrides.request ??
@@ -82,8 +94,14 @@ async function verify(overrides: {
       } as RequestContext),
     rootPrincipal: overrides.rootPrincipal ?? base.cast.alice,
     now: overrides.now ?? base.now,
-    resolveKey: base.keyRing.resolveKey,
-    isControlledBy: sameOriginController,
+    resolveKey: keyResolver.resolveKey,
+    isControlledBy: keyResolver.isControlledBy,
+    // G2 real: a fresh Bitstring status resolver over the pod at the case's `now`
+    // — unless the case explicitly passes `resolveStatus: undefined` (the
+    // fail-closed missing-resolver row).
+    ...("resolveStatus" in overrides
+      ? overrides.resolveStatus !== undefined && { resolveStatus: overrides.resolveStatus }
+      : { resolveStatus: podStatusResolver(base.pod, { now: overrides.now ?? base.now }) }),
     revoked: overrides.revoked ?? [],
     ...(overrides.statusUnreachable !== undefined && {
       statusUnreachable: overrides.statusUnreachable,
@@ -101,6 +119,40 @@ async function verify(overrides: {
 beforeAll(async () => {
   base = await runScenario();
 });
+
+/**
+ * Run `fn` with the hosted status list REVOKING the mandate (bit set, re-signed
+ * by Alice, re-hosted), restoring the original list afterwards so the shared
+ * `base` pod is unchanged for other cases.
+ */
+async function withRevokedMandate<T>(fn: () => Promise<T>): Promise<T> {
+  const original = base.pod.get(base.statusList.url);
+  const revoked = await issue({
+    credential: withStatusBit(base.statusList.credential, base.statusList.index, true),
+    key: base.actorKeys.alice,
+  });
+  base.pod.put(base.statusList.url, JSON.stringify(revoked), "application/vc+ld+json");
+  try {
+    return await fn();
+  } finally {
+    if (original !== undefined) {
+      base.pod.put(base.statusList.url, original.body, original.contentType);
+    }
+  }
+}
+
+/** Run `fn` with the hosted status list DELETED (unreachable), then restore it. */
+async function withMissingStatusList<T>(fn: () => Promise<T>): Promise<T> {
+  const original = base.pod.get(base.statusList.url);
+  base.pod.delete(base.statusList.url);
+  try {
+    return await fn();
+  } finally {
+    if (original !== undefined) {
+      base.pod.put(base.statusList.url, original.body, original.contentType);
+    }
+  }
+}
 
 describe("the four-phase chain verifier — golden-master decision matrix", () => {
   it("HAPPY: the valid chain permits", async () => {
@@ -184,7 +236,9 @@ describe("the four-phase chain verifier — golden-master decision matrix", () =
     // solid-vc fails closed with RELATED_RESOURCE_MISSING — there is no signed
     // digest to check the presented document against.
     const k2 = await generateActorKey("https://agent-a.example/keys#k2");
-    base.keyRing.register(k2);
+    // G5 real: publish the second key into agent A's WebID + key documents so the
+    // document-resolving seams accept it (no in-memory ring any more).
+    await publishActorKey(base.pod, base.cast.agentA, k2);
     const unboundAgreementVc = await issueAgentAuthorization(
       {
         principal: base.cast.agentA,
@@ -245,6 +299,77 @@ describe("the four-phase chain verifier — golden-master decision matrix", () =
     expect(r.policyIntegrityProvisional).toBe(true);
   });
 
+  it("KEY UNRESOLVABLE (G4/G5, enforced): a credential signed with a key its issuer's WebID never published → Phase A deny", async () => {
+    // The signature itself is well-formed, but the verification method is NOT
+    // hosted/listed in any WebID document — document resolution fails closed on
+    // BOTH seams (no key resolves, and the issuer's document does not authorise
+    // the method). solid-vc reports the controller failure first, so the pinned
+    // code is ISSUER_MISMATCH; the signature failure is also in the reason.
+    // Retires the in-memory KeyRing stub for real.
+    const ghost = await generateActorKey("https://alice.solid.example/keys#ghost");
+    const ghostMandateVc = await issueAgentAuthorization(
+      {
+        principal: base.cast.alice,
+        agent: base.cast.agentA,
+        action: ["read", "grantUse"],
+        target: base.cast.records,
+        policy: base.cast.mandateId,
+        policyContent: base.policyDocuments.mandate,
+        validFrom: VALID_FROM,
+        validUntil: VALID_UNTIL,
+      },
+      ghost,
+    );
+    const r = await verify({
+      primary: {
+        credentials: [ghostMandateVc, base.credentials.agreement],
+        policies: [base.mandate, base.agreement],
+        policyContents: {
+          [base.cast.mandateId]: { content: base.policyDocuments.mandate },
+          [base.cast.agreementId]: { content: base.policyDocuments.agreement },
+        },
+      },
+    });
+    expect(r.authorized).toBe(false);
+    expect(r.phase).toBe("A");
+    expect(r.code).toBe("ISSUER_MISMATCH");
+    expect(r.reason).toContain("signature");
+  });
+
+  it("KEY NOT ISSUER-CONTROLLED (G4, enforced): a credential signed with ANOTHER party's published key → Phase A ISSUER_MISMATCH", async () => {
+    // Signed with agent A's (published, resolvable) key, but the credential claims
+    // Alice as issuer/principal. The signature verifies against agent A's key; the
+    // document-resolved isControlledBy then fails because Alice's WebID document
+    // never lists agent A's verification method — the exact trust hole the
+    // same-origin heuristic could not close cross-actor, now shut fail-closed.
+    const crossSignedMandateVc = await issueAgentAuthorization(
+      {
+        principal: base.cast.alice,
+        agent: base.cast.agentA,
+        action: ["read", "grantUse"],
+        target: base.cast.records,
+        policy: base.cast.mandateId,
+        policyContent: base.policyDocuments.mandate,
+        validFrom: VALID_FROM,
+        validUntil: VALID_UNTIL,
+      },
+      base.actorKeys.agentA,
+    );
+    const r = await verify({
+      primary: {
+        credentials: [crossSignedMandateVc, base.credentials.agreement],
+        policies: [base.mandate, base.agreement],
+        policyContents: {
+          [base.cast.mandateId]: { content: base.policyDocuments.mandate },
+          [base.cast.agreementId]: { content: base.policyDocuments.agreement },
+        },
+      },
+    });
+    expect(r.authorized).toBe(false);
+    expect(r.phase).toBe("A");
+    expect(r.code).toBe("ISSUER_MISMATCH");
+  });
+
   it("REVOKED: a revoked chain hop → Phase C REVOKED", async () => {
     const r = await verify({ revoked: [base.cast.agreementId] });
     expect(r.phase).toBe("C");
@@ -255,6 +380,53 @@ describe("the four-phase chain verifier — golden-master decision matrix", () =
     const r = await verify({ statusUnreachable: true });
     expect(r.phase).toBe("C");
     expect(r.code).toBe("STATUS_RETRIEVAL_ERROR");
+  });
+
+  it("STATUS REVOKED (G2, enforced): the hosted Bitstring list has the mandate's bit SET → Phase C REVOKED", async () => {
+    const r = await withRevokedMandate(() => verify({}));
+    expect(r.authorized).toBe(false);
+    expect(r.phase).toBe("C");
+    expect(r.code).toBe("REVOKED");
+    // and with the original (all-clear) list restored, the same chain permits again
+    const again = await verify({});
+    expect(again.authorized).toBe(true);
+  });
+
+  it("STATUS LIST UNREACHABLE (G2, enforced): the hosted list 404s → Phase C STATUS_RETRIEVAL_ERROR (never a silent pass)", async () => {
+    const r = await withMissingStatusList(() => verify({}));
+    expect(r.authorized).toBe(false);
+    expect(r.phase).toBe("C");
+    expect(r.code).toBe("STATUS_RETRIEVAL_ERROR");
+  });
+
+  it("STATUS RESOLVER MISSING (G2, enforced): a status-carrying credential verified with NO resolver → Phase C STATUS_RETRIEVAL_ERROR (fail-closed)", async () => {
+    const r = await verify({ resolveStatus: undefined });
+    expect(r.authorized).toBe(false);
+    expect(r.phase).toBe("C");
+    expect(r.code).toBe("STATUS_RETRIEVAL_ERROR");
+  });
+
+  it("STATUS LIST FORGED (G2, enforced): a re-hosted list NOT signed by the credential's issuer → Phase C STATUS_RETRIEVAL_ERROR", async () => {
+    // An attacker re-hosts an all-clear list signed with THEIR OWN key (agent A's):
+    // the list's signature verifies against a published key, but the issuer is not
+    // the credential's issuer — the trust pin refuses it, fail-closed.
+    const original = base.pod.get(base.statusList.url);
+    const { proof: _proof, ...unsignedList } = base.statusList.credential;
+    const forged = await issue({
+      credential: { ...unsignedList, issuer: base.cast.agentA },
+      key: base.actorKeys.agentA,
+    });
+    base.pod.put(base.statusList.url, JSON.stringify(forged), "application/vc+ld+json");
+    try {
+      const r = await verify({});
+      expect(r.authorized).toBe(false);
+      expect(r.phase).toBe("C");
+      expect(r.code).toBe("STATUS_RETRIEVAL_ERROR");
+    } finally {
+      if (original !== undefined) {
+        base.pod.put(base.statusList.url, original.body, original.contentType);
+      }
+    }
   });
 
   it("OUT OF SCOPE: the actual use falls outside the purpose → Phase D POLICY_DENIED", async () => {
@@ -366,7 +538,42 @@ describe("the four-phase chain verifier — golden-master decision matrix", () =
   });
 
   it("GOLDEN: the full decision matrix (verdict per case)", async () => {
+    // G4/G5 rows: a mandate-shaped credential signed with an UNPUBLISHED key, and
+    // one signed with ANOTHER party's published key (issuer not the controller).
+    const mandateInput = {
+      principal: base.cast.alice,
+      agent: base.cast.agentA,
+      action: ["read", "grantUse"],
+      target: base.cast.records,
+      policy: base.cast.mandateId,
+      policyContent: base.policyDocuments.mandate,
+      validFrom: VALID_FROM,
+      validUntil: VALID_UNTIL,
+    } as const;
+    const ghostKey = await generateActorKey("https://alice.solid.example/keys#ghost-golden");
+    const ghostMandateVc = await issueAgentAuthorization(mandateInput, ghostKey);
+    const crossSignedMandateVc = await issueAgentAuthorization(mandateInput, base.actorKeys.agentA);
+    const keyDenyChain = (mandateVc: VerifiableCredential): PresentedChain => ({
+      credentials: [mandateVc, base.credentials.agreement],
+      policies: [base.mandate, base.agreement],
+      policyContents: {
+        [base.cast.mandateId]: { content: base.policyDocuments.mandate },
+        [base.cast.agreementId]: { content: base.policyDocuments.agreement },
+      },
+    });
+    // G2 rows are computed FIRST and sequentially — they mutate + restore the
+    // shared pod's hosted status list, so they must not interleave with rows
+    // whose resolver would observe the mutated list.
+    const statusRevokedRow = await withRevokedMandate(() => verify({}));
+    const statusListUnreachableRow = await withMissingStatusList(() => verify({}));
+    const statusResolverMissingRow = await verify({ resolveStatus: undefined });
+
     const rows: Array<[string, Promise<VerifyAuthorityResult>]> = [
+      ["status-revoked", Promise.resolve(statusRevokedRow)],
+      ["status-list-unreachable", Promise.resolve(statusListUnreachableRow)],
+      ["status-resolver-missing", Promise.resolve(statusResolverMissingRow)],
+      ["key-unresolvable", verify({ primary: keyDenyChain(ghostMandateVc) })],
+      ["key-not-issuer-controlled", verify({ primary: keyDenyChain(crossSignedMandateVc) })],
       ["happy", verify({})],
       ["actor-is-leaf-assignee", verify({ actor: base.cast.inst, actorChain: undefined })],
       [
