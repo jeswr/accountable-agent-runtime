@@ -7,17 +7,17 @@
 // verify); only the pod/clock are doubled.
 
 import {
+  type PresentedChain,
+  type VerifyAuthorityResult,
+  verifyAgentAuthority,
+} from "@jeswr/agent-authz-verifier";
+import {
   issue,
   issueAgentAuthorization,
   type VerifiableCredential,
   withStatusBit,
 } from "@jeswr/solid-vc";
 import { beforeAll, describe, expect, it } from "vitest";
-import {
-  type PresentedChain,
-  type VerifyAuthorityResult,
-  verifyAgentAuthority,
-} from "../src/chain-verifier/index.js";
 import type { OdrlPolicy, RequestContext } from "../src/odrl.js";
 import {
   generateActorKey,

@@ -1,6 +1,6 @@
+import { type VerifyAuthorityResult, verifyAgentAuthority } from "@jeswr/agent-authz-verifier";
 import type { VerifiableCredential } from "@jeswr/solid-vc";
 import { Store } from "n3";
-import { type VerifyAuthorityResult, verifyAgentAuthority } from "../chain-verifier/index.js";
 import type { OdrlPolicy } from "../odrl.js";
 /** A stored pod resource. */
 export interface StoredResource {

@@ -11,10 +11,10 @@
 // `actionProvenance`) and G10 (the delegation profile is on solid-odrl main);
 // the remaining labelled stubs are G9 (provisional decision shape), G11 (the
 // in-process carrier) and G12 (no stock purpose/period shape).
+import { verifyAgentAuthority, } from "@jeswr/agent-authz-verifier";
 import { decodeUpgradeResponse, encodeUpgradeOffer, encodeUpgradeResponse, mayDowngradeToNl, parseIntent, validateIntent, verifyProtocolDocument, } from "@jeswr/solid-a2a";
 import { buildAgentPointer, describeAgent, discoverAgent } from "@jeswr/solid-agent-card";
 import { bitstringStatusListEntry, buildBitstringStatusListCredential, issue, issueAgentAuthorization, } from "@jeswr/solid-vc";
-import { verifyAgentAuthority, } from "../chain-verifier/index.js";
 import { policyToTurtle, requestContextFromA2AIntent } from "../odrl.js";
 import { serializeTurtle } from "../rdf.js";
 import { writeActivity, writeDecision, writeEngagement, } from "../trace/index.js";

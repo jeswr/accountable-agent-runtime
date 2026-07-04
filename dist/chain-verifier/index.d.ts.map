@@ -1,1 +1,0 @@
-{"version":3,"file":"index.d.ts","sourceRoot":"","sources":["../../src/chain-verifier/index.ts"],"names":[],"mappings":"AAIA,YAAY,EAAE,iBAAiB,EAAE,aAAa,EAAE,MAAM,aAAa,CAAC;AACpE,OAAO,EAAE,aAAa,EAAE,MAAM,aAAa,CAAC;AAC5C,YAAY,EACV,kBAAkB,EAClB,cAAc,EACd,sBAAsB,EACtB,qBAAqB,GACtB,MAAM,eAAe,CAAC;AACvB,OAAO,EAAE,sBAAsB,EAAE,oBAAoB,EAAE,MAAM,eAAe,CAAC"}

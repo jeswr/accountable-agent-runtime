@@ -35,8 +35,8 @@
  *
  * @packageDocumentation
  */
-export type { BoundAuthorization, PresentedChain, VerifierErrorCode, VerifierPhase, VerifyAuthorityOptions, VerifyAuthorityResult, } from "./chain-verifier/index.js";
-export { PHASE_A_CODES, readBoundAuthorization, verifyAgentAuthority, } from "./chain-verifier/index.js";
+export type { BoundAuthorization, PresentedChain, VerifierErrorCode, VerifierPhase, VerifyAuthorityOptions, VerifyAuthorityResult, } from "@jeswr/agent-authz-verifier";
+export { PHASE_A_CODES, readBoundAuthorization, verifyAgentAuthority, } from "@jeswr/agent-authz-verifier";
 export type { ActiveDuty, DelegatedEvaluationResult, OdrlConstraint, OdrlDuty, OdrlPolicy, OdrlRule, RequestContext, } from "./odrl.js";
 export { delegationProvenance, evaluateDelegated } from "./odrl.js";
 export type { ActorKey, RunScenarioOptions, ScenarioResult, WacGrant } from "./scenario/index.js";

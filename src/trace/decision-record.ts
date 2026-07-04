@@ -10,8 +10,8 @@
 // the ODRL CG Formal Semantics report model once its namespace lands (verified
 // "to be defined" 2026-07-03). Provisional — NOT a stable vocabulary.
 
+import type { VerifyAuthorityResult } from "@jeswr/agent-authz-verifier";
 import type { Quad } from "@rdfjs/types";
-import type { VerifyAuthorityResult } from "../chain-verifier/index.js";
 import type { RequestContext } from "../odrl.js";
 import { GraphBuilder, iriRef } from "../rdf.js";
 import {

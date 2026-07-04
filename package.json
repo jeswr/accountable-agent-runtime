@@ -28,6 +28,7 @@
     "prepare": "npm run build"
   },
   "dependencies": {
+    "@jeswr/agent-authz-verifier": "github:jeswr/agent-authz-verifier#e153710a9082373c6709373ca4d9aa40500c7aa3",
     "@jeswr/fetch-rdf": "^0.1.0",
     "@jeswr/solid-a2a": "git+https://github.com/jeswr/solid-a2a.git#e5ff315c2c4c44eb1d83679c22da95696f3ba8b7",
     "@jeswr/solid-agent-card": "git+https://github.com/jeswr/solid-agent-card.git#c94b78e85a606fc96f5e2bea6a2204699dc23e96",

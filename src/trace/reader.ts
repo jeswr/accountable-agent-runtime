@@ -16,15 +16,15 @@
 // also surfaces the negative demos: a PROV gap (the mirrored-trace divergence a
 // PROV-omitting actor leaves), a recorded-vs-re-run divergence, and the breach.
 
-import type { VerifiableCredential } from "@jeswr/solid-vc";
-import type { Quad } from "@rdfjs/types";
-import { DataFactory, Store } from "n3";
 import {
   type PresentedChain,
   readBoundAuthorization,
   type VerifyAuthorityResult,
   verifyAgentAuthority,
-} from "../chain-verifier/index.js";
+} from "@jeswr/agent-authz-verifier";
+import type { VerifiableCredential } from "@jeswr/solid-vc";
+import type { Quad } from "@rdfjs/types";
+import { DataFactory, Store } from "n3";
 import type { OdrlPolicy, RequestContext } from "../odrl.js";
 import { ODRLD_DELEGATED_UNDER, ODRLD_REVOKED_POLICY, parsePolicy } from "../odrl.js";
 import {

@@ -13,6 +13,11 @@
 // in-process carrier) and G12 (no stock purpose/period shape).
 
 import {
+  type PresentedChain,
+  type VerifyAuthorityResult,
+  verifyAgentAuthority,
+} from "@jeswr/agent-authz-verifier";
+import {
   decodeUpgradeResponse,
   encodeUpgradeOffer,
   encodeUpgradeResponse,
@@ -30,11 +35,6 @@ import {
   issue,
   issueAgentAuthorization,
 } from "@jeswr/solid-vc";
-import {
-  type PresentedChain,
-  type VerifyAuthorityResult,
-  verifyAgentAuthority,
-} from "../chain-verifier/index.js";
 import { type OdrlPolicy, policyToTurtle, requestContextFromA2AIntent } from "../odrl.js";
 import { serializeTurtle } from "../rdf.js";
 import {

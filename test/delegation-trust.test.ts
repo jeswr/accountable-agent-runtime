@@ -26,13 +26,13 @@
 // subject-issuer/digest/status gates (Pass 2) — so a LATER hop's bad proof is
 // never masked by an EARLIER hop's Phase-B/C finding. See the CROSS-HOP case.
 
-import { buildAgentAuthorizationCredential, issue, type KeyPair } from "@jeswr/solid-vc";
-import { beforeAll, describe, expect, it } from "vitest";
 import {
   type PresentedChain,
   readBoundAuthorization,
   verifyAgentAuthority,
-} from "../src/chain-verifier/index.js";
+} from "@jeswr/agent-authz-verifier";
+import { buildAgentAuthorizationCredential, issue, type KeyPair } from "@jeswr/solid-vc";
+import { beforeAll, describe, expect, it } from "vitest";
 import {
   generateActorKey,
   podKeyResolver,
