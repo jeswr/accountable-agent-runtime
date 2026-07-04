@@ -3,7 +3,7 @@
 // The happy-path §4 scenario replay + the auditor's walk + trace byte-stability.
 
 import { describe, expect, it } from "vitest";
-import { runScenario, sameOriginController } from "../src/scenario/index.js";
+import { podKeyResolver, runScenario } from "../src/scenario/index.js";
 import { auditArtifact, loadTrace } from "../src/trace/index.js";
 
 describe("the §4 scenario, end to end", () => {
@@ -51,8 +51,7 @@ describe("the §4 scenario, end to end", () => {
     const r = await runScenario();
     const trace = await loadTrace(r.pod, r.cast.engagementBase);
     const audit = await auditArtifact(trace, r.cast.derivedArtifact, {
-      resolveKey: r.keyRing.resolveKey,
-      isControlledBy: sameOriginController,
+      ...podKeyResolver(r.pod),
     });
 
     expect(audit.provGap).toBe(false);
@@ -79,8 +78,7 @@ describe("the §4 scenario, end to end", () => {
     const r = await runScenario();
     const trace = await loadTrace(r.pod, r.cast.engagementBase);
     const audit = await auditArtifact(trace, r.cast.derivedArtifact, {
-      resolveKey: r.keyRing.resolveKey,
-      isControlledBy: sameOriginController,
+      ...podKeyResolver(r.pod),
       actualUsePurpose: r.cast.misusePurpose,
     });
     expect(audit.dispute?.breach).toBe(true);
@@ -94,8 +92,7 @@ describe("the §4 scenario, end to end", () => {
     const trace = await loadTrace(r.pod, r.cast.engagementBase);
     // An artifact with no activity claiming to have generated it.
     const audit = await auditArtifact(trace, "https://institute.example/derived/ghost.ttl", {
-      resolveKey: r.keyRing.resolveKey,
-      isControlledBy: sameOriginController,
+      ...podKeyResolver(r.pod),
     });
     expect(audit.provGap).toBe(true);
     expect(audit.activity).toBeUndefined();

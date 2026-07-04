@@ -68,11 +68,11 @@ export {
   CAST,
   generateActorKey,
   InMemoryPod,
-  KeyRing,
+  podKeyResolver,
+  publishActorKey,
   RUNTIME_PROTOCOL_ID,
   runScenario,
   ScenarioRefusal,
-  sameOriginController,
   VALID_FROM,
   VALID_UNTIL,
 } from "./scenario/index.js";

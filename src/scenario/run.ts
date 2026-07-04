@@ -20,7 +20,7 @@ import {
 } from "@jeswr/solid-a2a";
 import type { AgentDiscovery } from "@jeswr/solid-agent-card";
 import { buildAgentPointer, describeAgent, discoverAgent } from "@jeswr/solid-agent-card";
-import type { VerifiableCredential } from "@jeswr/solid-vc";
+import type { KeyPair, VerifiableCredential, WebIdKeyResolver } from "@jeswr/solid-vc";
 import { issueAgentAuthorization } from "@jeswr/solid-vc";
 import {
   type PresentedChain,
@@ -43,7 +43,7 @@ import {
   VALID_FROM,
   VALID_UNTIL,
 } from "./cast.js";
-import { generateActorKey, KeyRing, sameOriginController } from "./keys.js";
+import { generateActorKey, podKeyResolver, publishActorKey } from "./keys.js";
 import { InMemoryPod } from "./pod.js";
 import { buildRuntimeProtocolDocument, RUNTIME_PROTOCOL_ID } from "./protocol.js";
 
@@ -62,7 +62,22 @@ export interface WacGrant {
 /** The full result of a scenario run — everything the tests + auditor consume. */
 export interface ScenarioResult {
   readonly pod: InMemoryPod;
-  readonly keyRing: KeyRing;
+  /**
+   * The document-resolving `{ resolveKey, isControlledBy }` pair the run verified
+   * with (G4/G5, real): keys resolve from the WebID documents hosted on the pod,
+   * never from an in-memory ring. NOTE it caches documents for its lifetime —
+   * after mutating key documents, build a fresh one with `podKeyResolver(pod)`.
+   */
+  readonly keyResolver: WebIdKeyResolver;
+  /**
+   * The actors' signing key pairs (test material — lets variant tests re-sign,
+   * e.g. a revoked status list or a cross-signed credential).
+   */
+  readonly actorKeys: {
+    readonly alice: KeyPair;
+    readonly agentA: KeyPair;
+    readonly inst: KeyPair;
+  };
   readonly now: Date;
   readonly discovery: AgentDiscovery;
   readonly protocolHash: string;
@@ -105,19 +120,24 @@ export interface RunScenarioOptions {
 export async function runScenario(options: RunScenarioOptions = {}): Promise<ScenarioResult> {
   const now = options.now ?? new Date("2026-08-01T00:00:00.000Z");
   const pod = new InMemoryPod();
-  const keyRing = new KeyRing();
 
   // --- Step 0: identities, keys, pointers, self-description ----------------
   const aliceKey = await generateActorKey(CAST.aliceKeyVm);
   const agentAKey = await generateActorKey(CAST.agentAKeyVm);
   const instKey = await generateActorKey(CAST.instKeyVm);
-  for (const k of [aliceKey, agentAKey, instKey]) {
-    keyRing.register(k);
-  }
 
   // Institute org profile → agent pointer to agentR (the "org links its agent").
+  // Written FIRST so the key publication below merges into it (one org document).
   const pointer = buildAgentPointer(CAST.inst, CAST.agentR);
   pod.put(CAST.instProfileDoc, await pointer.toString(), "text/turtle");
+
+  // G4/G5 (Phase 1: REAL) — each issuer PUBLISHES its verification method into
+  // its WebID + key documents on the pod, and every verification below resolves
+  // keys FROM those documents (fail-closed, both directions), never from a ring.
+  await publishActorKey(pod, CAST.alice, aliceKey);
+  await publishActorKey(pod, CAST.agentA, agentAKey);
+  await publishActorKey(pod, CAST.inst, instKey);
+  const keyResolver = podKeyResolver(pod);
 
   // The institute agent self-describes (Agent Description hosted at its WebID doc).
   const { agentDescription } = describeAgent({
@@ -262,8 +282,8 @@ export async function runScenario(options: RunScenarioOptions = {}): Promise<Sce
     request,
     rootPrincipal: CAST.alice,
     now,
-    resolveKey: keyRing.resolveKey,
-    isControlledBy: sameOriginController,
+    resolveKey: keyResolver.resolveKey,
+    isControlledBy: keyResolver.isControlledBy,
     revoked: [],
     actor: CAST.agentR,
     actorChain,
@@ -340,7 +360,8 @@ export async function runScenario(options: RunScenarioOptions = {}): Promise<Sce
 
   return {
     pod,
-    keyRing,
+    keyResolver,
+    actorKeys: { alice: aliceKey, agentA: agentAKey, inst: instKey },
     now,
     discovery,
     protocolHash: pd.hash,
