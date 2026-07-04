@@ -59,7 +59,16 @@ import {
 
 /** The bound agent-authorization claim read from an AgentAuthorizationCredential. */
 export interface BoundAuthorization {
-  /** The issuer / subject / delegator (svc credential: issuer ≡ subject.id). */
+  /**
+   * The delegating principal — ALWAYS the PROOF-VERIFIED `vc.issuer`, NEVER the
+   * self-asserted `credentialSubject.id`. `verifyCredential` proves the signature
+   * against `issuer` + key control but does NOT constrain the subject id, so
+   * trusting `subject.id` here would let an attacker with their own valid issuer
+   * impersonate any assigner/root (a chain-of-trust bypass). The verifier
+   * additionally enforces `subject.id === issuer` fail-closed in Phase B
+   * (`SUBJECT_ISSUER_MISMATCH`), AFTER Phase A — so a bad-proof credential still
+   * reports its Phase-A code.
+   */
   readonly principal: string;
   /** The delegate the credential authorizes (`svc:authorizes`). */
   readonly authorizes: string;
@@ -221,9 +230,14 @@ function claimStrings(value: unknown): string[] {
 }
 
 /**
- * Read the AgentAuthorizationCredential's bound claim from its subject graph —
- * `issuer` is the principal (solid-vc asserts issuer ≡ subject.id); the subject
- * carries `svc:authorizes` / `svc:action` / `svc:target` / `svc:policy`.
+ * Read the AgentAuthorizationCredential's bound claim from its subject graph. The
+ * delegating `principal` is the PROOF-VERIFIED `vc.issuer` — never the
+ * self-asserted `credentialSubject.id` (see {@link BoundAuthorization.principal}
+ * for why trusting the subject id would be a chain-of-trust bypass). The subject
+ * carries the grant fields `svc:authorizes` / `svc:action` / `svc:target` /
+ * `svc:policy`. NOTE this is a pure reader — it does NOT verify the proof; the
+ * verifier runs Phase A (`verifyCredential`) and the Phase-B
+ * `subject.id === issuer` fail-closed check before any of these fields are trusted.
  */
 export function readBoundAuthorization(vc: VerifiableCredential): BoundAuthorization | undefined {
   const types = vc.type ?? [];
@@ -231,11 +245,12 @@ export function readBoundAuthorization(vc: VerifiableCredential): BoundAuthoriza
     return undefined;
   }
   const subject = subjectRecord(vc);
-  const principal = claimString(subject?.id) ?? vc.issuer;
   const authorizes = claimString(subject?.[SVC_AUTHORIZES]);
-  if (subject === undefined || authorizes === undefined) {
+  if (subject === undefined || authorizes === undefined || typeof vc.issuer !== "string") {
     return undefined;
   }
+  // SECURITY: the delegating principal is the proof-anchored issuer, NOT subject.id.
+  const principal = vc.issuer;
   const action = claimStrings(subject[SVC_ACTION]);
   const target = claimString(subject[SVC_TARGET]);
   const policy = claimString(subject[SVC_POLICY]);
@@ -493,6 +508,33 @@ export async function verifyAgentAuthority(
   const allContentBound = ordered.every((p) => contents[p.id] !== undefined);
 
   // --- Phase B: cross-binding ----------------------------------------------
+  // SECURITY (delegation-trust anchor): each credential's self-asserted
+  // `credentialSubject.id`, when present, MUST equal its proof-verified `issuer`.
+  // Phase A (`verifyCredential`) proves the signature against `issuer` + key
+  // control but does NOT constrain the subject id — so without this an attacker
+  // who legitimately controls their OWN issuer key could sign a credential whose
+  // `subject.id` names a TRUSTED party (a root owner / an authorized delegatee)
+  // and have the chain accept it as that party's grant, impersonating any
+  // assigner. The composed verifier must enforce it here, fail-closed. (The
+  // principal used for every trust decision is already anchored to `issuer` in
+  // `readBoundAuthorization`; this rejects a spoofed subject outright rather than
+  // silently ignoring it.) Deliberately AFTER Phase A: a credential with a bad
+  // proof AND a spoofed subject reports its Phase-A code — the spoofed-subject
+  // attack still lands here because the attacker's credential is genuinely signed
+  // by their own key, so it passes Phase A and is refused on the mismatch.
+  for (const hop of ordered) {
+    // biome-ignore lint/style/noNonNullAssertion: every hop bound (checked above)
+    const b = bound.get(hop.id)!;
+    const assertedSubjectId = claimString(subjectRecord(b.vc)?.id);
+    if (assertedSubjectId !== undefined && assertedSubjectId !== b.vc.issuer) {
+      return deny(
+        "B",
+        "SUBJECT_ISSUER_MISMATCH",
+        `Credential subject <${assertedSubjectId}> ≠ its proof-verified issuer <${b.vc.issuer}> — refusing a subject-spoofed authorization for hop <${hop.id}>.`,
+        chainIds,
+      );
+    }
+  }
   // biome-ignore lint/style/noNonNullAssertion: ordered non-empty (assembly)
   const rootHop = ordered[0]!;
   // biome-ignore lint/style/noNonNullAssertion: every hop bound (checked above)
@@ -510,9 +552,9 @@ export async function verifyAgentAuthority(
     const hop = ordered[i]!;
     // biome-ignore lint/style/noNonNullAssertion: every hop bound
     const b = bound.get(hop.id)!;
-    // The hop's credential must be issued by (and self-assert a subject of) the
-    // hop's assigner (the delegator). solid-vc already tied issuer ≡ subject.id;
-    // here we tie both to the ODRL assigner.
+    // The hop's credential must be issued by the hop's assigner (the delegator).
+    // The subject↔issuer anchor above already tied any self-asserted subject.id
+    // to the proof-verified issuer; here we tie that issuer to the ODRL assigner.
     if (hop.assigner !== undefined && b.auth.principal !== hop.assigner) {
       return deny(
         "B",
