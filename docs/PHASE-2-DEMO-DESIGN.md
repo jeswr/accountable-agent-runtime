@@ -103,16 +103,17 @@ additions a live pod needs (records, inboxes, status list) and an **explicit ACL
   inbox/                      LDN inbox                                     [owner Read/Write/Control; acl:Append for agent-a + agent-r]
   agents/engagements/e1/      the trace container (mandate.ttl, agreement.ttl,
                               credentials/, chain.prov.ttl, decisions/,
-                              activities/, revocations.ttl)                 [owner Control; PUBLIC READ — see the auditor note]
+                              activities/, revocations.ttl)                 [owner Control; acl:Write (acl:default) for AGENT A —
+                                                                             Alice delegates trace authoring to her agent;
+                                                                             PUBLIC READ — see the auditor note]
 /agent-a/  profile/card + keys                                             [public read]  + inbox/ [Append for institute actors]
 /institute/
   profile/card + keys                                                      [public read]
-  agents/research             agent R's WebID document (R's own account WebID is used
-                              instead in the live cast — see §1.2; this row only exists
-                              if we keep the two-document aesthetic; DECIDED: no — use
-                              the account WebIDs directly, fewer moving parts)
   protocols/data-sharing.ttl  the hash-pinned Protocol Document             [public read]
-  agents/engagements/e1/      the MIRROR trace (institute's own copy)       [owner Control; public read]
+  agents/engagements/e1/      the MIRROR trace (institute's own copy)       [owner Control; acl:Write (acl:default) for AGENT R —
+                                                                             the institute delegates trace authoring to its
+                                                                             acting agent (the same delegation instAgentVc
+                                                                             attests); public read]
   inbox/                      [Append for agent-a]
 /agent-r/  profile/card + keys                                             [public read]
 ```
@@ -128,14 +129,24 @@ All ACLs are written via `@solid/object` typed `.acl` accessors (house rule — 
 triples), owner-control fail-closed: every container gets an explicit ACL before any non-owner
 touches it; a missing ACL is a seeding bug, not an inherit-and-hope.
 
-The `.well-known` caveat: `solid-agent-card` discovery walks WebID → agent pointer →
-`/.well-known/agent-card.json` at the agent's **origin**. On a shared local CSS all pods share
-one origin, and CSS does not serve pod-controlled `/.well-known/` documents. **Design decision:**
-host each agent card at a pod path (`/agent-r/card/agent-card.json`) and point the WebID's agent
-pointer / `rdfs:seeAlso` at it — `discoverAgent` already follows explicit pointers before
-falling back to well-known probing (verify at build time; if the fallback-only path is hardcoded
-to well-known, that is a small `solid-agent-card` follow-up: accept a card IRI from the WebID
-document. Flagged in T2).
+**The mirror-integrity invariant these grants preserve** (DESIGN §5's duplicated-trace
+argument): the two write delegations are **disjoint** — agent A can write only Alice's trace
+copy, agent R only the institute's; neither party's credential can touch the other's copy (and
+the owners hold `acl:Control`, so neither delegate can widen its own grant). No single
+credential can therefore forge or silently edit **both** copies, which is exactly what makes a
+mirrored-trace divergence evidential. The seeding tests assert both cross-writes 403.
+
+**Agent-card hosting (resolved against `solid-agent-card` `src/discover.ts`, 2026-07-04):**
+`discoverAgent` dereferences the **agent-pointer IRI itself** and verifies the ANP
+`ad:AgentDescription` found in that document (subject bound to the agent IRI, exactly one
+`ad:owner` back-link) — `/.well-known/` is **not on the discovery path** (the well-known
+helpers are separate conveniences for origin-rooted deployments). So no shared-origin problem
+exists and **no `solid-agent-card` change is needed**: seeding merges each agent's
+`describeAgent(...).agentDescription` quads (subject = the agent's WebID) into its profile
+document, with `ad:owner` = its principal's WebID. The A2A JSON card
+(`describeAgent(...).agentCard`) is additionally hosted at a pod path
+(`/agent-r/card/agent-card.json`, public read) for completeness/exhibition; nothing in the demo
+flow depends on it.
 
 ---
 
@@ -242,11 +253,15 @@ demo transcript — the pod server itself enforcing the materialised boundary is
 
 ### 2.5 PROV bundle + trace writes, live (step 7)
 
-`writeEngagement` / `writeActivity` / `writeDecision` run unchanged over `LivePod`. Each party
-writes **its own** trace container with **its own** session (Alice's copy under `/alice/…` via
-Alice's/A's fetch; the institute's mirror under `/institute/…` via R's fetch) — the mirrored-copy
-integrity argument of DESIGN §5 only holds if no single credential can write both copies, and the
-demo should be structured so that it actually can't (the ACLs above enforce it).
+`writeEngagement` / `writeActivity` / `writeDecision` run unchanged over `LivePod`. Each party's
+trace copy is written **only by that party's side, with its own sessions** — Alice's copy under
+`/alice/agents/engagements/e1/` by Alice's session (setup: mandate, credentials, status
+mirror) and agent A's session (negotiation outputs: agreement, chain overlay, decisions, and
+the activity bundles Alice's side mirrors from R's LDN announcements, §3.4); the institute's
+mirror under `/institute/agents/engagements/e1/` by agent R's session (its `acl:Write`
+delegation, §1.4). The mirrored-copy integrity argument of DESIGN §5 only holds if no single
+credential can write both copies — the disjoint §1.4 grants enforce it, and the seeding tests
+assert the cross-writes 403.
 
 ---
 
@@ -318,8 +333,11 @@ Receiver processing rules (fail-closed, all asserted in tests):
 A: POST Offer(upgrade)            → R's inbox          R polls, decodes, verifies PD pin
 R: POST Accept + intent           → A's inbox          A validates intent (SHACL), verifies R's chain (4-phase)
 A: POST intent + chain pointers   → R's inbox          R verifies A's chain (4-phase)
-A: writes agreement + credentials → both trace copies (each party writes its own)
-A: POST Announce(agreement)       → R's inbox          R countersigns (mirrored credential, G15 pattern)
+A: writes agreement + credentials → Alice's trace copy (A's session; §2.5)
+A: POST Announce(agreement)       → R's inbox          R countersigns (mirrored credential, G15
+                                                        pattern) and writes the agreement +
+                                                        credentials into the INSTITUTE trace
+                                                        (R's session — its own copy, §2.5)
 [Alice's session materialises the WAC grant — step 6]
 R: acts (reads records), writes activity bundle + decision record → institute trace
 R: POST Announce(activity)        → Alice's inbox      Alice's copy: the harness (as Alice)
@@ -568,7 +586,7 @@ ACL, SSRF surfaces ⇒ **not** auto-merge-eligible under the drive policy).
 |---|---|---|---|---|---|
 | T0 | land the in-flight `refactor/consume-agent-authz-verifier` (@ `ad4d176`, worktree `aar-vqyk`) — verify + merge, do NOT redispatch | — | (orchestrator: verify-merge) | — | yes |
 | T1 | `live/pod.ts` — `LivePod` (ResourceSink/Source over injected fetch; scope guard, redirect refusal, If-None-Match/If-Match discipline, Link-rel acl discovery, container creation) + `live/fetch.ts` (loopback-gated guarded fetch, §2.3) | T0 | suite-package-author | fable | yes |
-| T2 | `live/seed.ts` + parameterised cast — CSS boot child-process mgmt, 4 accounts via account API, profiles/keys/inbox/records/protocol/status-list seeding, ALL ACLs via `@solid/object`; `buildCast(bases)`; resolve the agent-card-hosting decision (§1.4, incl. the possible small `solid-agent-card` follow-up) | T0 | suite-package-author | fable | yes (ACLs) |
+| T2 | `live/seed.ts` + parameterised cast — CSS boot child-process mgmt, 4 accounts via account API, profiles/keys/inbox/records/protocol/status-list seeding, ALL ACLs via `@solid/object`; `buildCast(bases)`; ANP descriptions merged into the agent WebID documents per the resolved §1.4 hosting decision (no `solid-agent-card` change needed); assert the §1.4 cross-write 403s | T0 | suite-package-author | fable | yes (ACLs) |
 | T3 | `live/auth.ts` — per-actor solid-dpop client-credentials sessions; no persistence, no logging of secrets | T0 | suite-package-author | sonnet | yes |
 | T4 | step 6/7 live: WAC grant via typed accessors + the 403→200 assertion; engagement/activity/decision writes over `LivePod`; mirrored-trace write separation (§2.5) | T1,T2,T3 | suite-package-author | fable | yes |
 | T5 | `live/ldn.ts` — the G11 carrier (§3): envelope codec, inbox post/poll, fail-closed receiver rules, handshake threading | T1,T3 | suite-package-author | fable | yes (SSRF rules) |
