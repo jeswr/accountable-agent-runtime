@@ -6,7 +6,7 @@
 // + the cross-write 403 assertions live in the AAR_IT-gated integration suite.
 
 import { SsrfError } from "@jeswr/guarded-fetch";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   actorBasesFor,
   ancestorContainers,
@@ -59,6 +59,19 @@ describe("loopback transport gate", () => {
     // a non-loopback http base is refused up front (never a silently-widened hatch).
     expect(() => createDiscoveryFetch("http://pod.example.com")).toThrow(SsrfError);
   });
+
+  it("createDiscoveryFetch is DNS-PINNED: a rebinding resolution to a private address is refused", async () => {
+    // Opus review: the discovery fetch must reject with SsrfError BEFORE connecting when the
+    // (injected) DNS resolution yields a private/metadata address — proving it uses the node
+    // DNS-pinning guard's validating lookup, not a classify-then-fetch-by-hostname path that
+    // a rebinding attacker could slip. `resolveAll` is the node guard's sole resolver seam.
+    const discovery = createDiscoveryFetch("https://pod.example.com", {
+      resolveAll: async () => [{ address: "169.254.169.254", family: 4 }],
+    });
+    await expect(discovery("https://pod.example.com/agent-card.json")).rejects.toBeInstanceOf(
+      SsrfError,
+    );
+  });
 });
 
 describe("parseAclLink", () => {
@@ -94,6 +107,81 @@ describe("credentialed setup paths fail closed on a plaintext-public base (robor
   it("permits an https-public base/issuer at the transport gate (network then handles it)", () => {
     // The gate itself must NOT reject https — only the (absent) server would.
     expect(assertBaseTransport("https://pod.example.com")).toEqual({ loopback: false });
+  });
+});
+
+describe("seedAccount origin-pins server-supplied control URLs (Opus review, credential exfil)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("refuses to POST the generated password to a FOREIGN-origin control URL", async () => {
+    // A hostile/misconfigured target answers /.account/ with control URLs pointing at a THIRD
+    // origin. seedAccount must refuse BEFORE POSTing the password/credential-minting request
+    // there — otherwise the freshly-generated secret is exfiltrated to the attacker.
+    const passwordPosts: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation((async (input: RequestInfo | URL) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.endsWith("/.account/account/")) {
+        return new Response("{}", { status: 200, headers: { "set-cookie": "css=abc; Path=/" } });
+      }
+      if (url.endsWith("/.account/")) {
+        return new Response(
+          JSON.stringify({
+            controls: {
+              password: { create: "https://evil.example/steal-password" },
+              account: {
+                pod: "https://pod.example.com/.account/pod/",
+                clientCredentials: "https://pod.example.com/.account/cc/",
+              },
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      passwordPosts.push(url);
+      return new Response("{}", { status: 200 });
+    }) as typeof globalThis.fetch);
+
+    await expect(seedAccount("https://pod.example.com", "alice")).rejects.toBeInstanceOf(SsrfError);
+    // The password/credential POST to the foreign origin must NEVER have been issued.
+    expect(passwordPosts).not.toContain("https://evil.example/steal-password");
+  });
+
+  it("permits same-origin control URLs through the origin pin", async () => {
+    // Same-origin controls pass the pin; a downstream stub then completes the flow.
+    vi.spyOn(globalThis, "fetch").mockImplementation((async (input: RequestInfo | URL) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.endsWith("/.account/account/")) {
+        return new Response("{}", { status: 200, headers: { "set-cookie": "css=abc; Path=/" } });
+      }
+      if (url.endsWith("/.account/")) {
+        return new Response(
+          JSON.stringify({
+            controls: {
+              password: { create: "https://pod.example.com/.account/password/" },
+              account: {
+                pod: "https://pod.example.com/.account/pod/",
+                clientCredentials: "https://pod.example.com/.account/cc/",
+              },
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      if (url.endsWith("/cc/")) {
+        return new Response(JSON.stringify({ id: "the-id", secret: "the-secret" }), {
+          status: 200,
+        });
+      }
+      return new Response("{}", { status: 200 });
+    }) as typeof globalThis.fetch);
+
+    const account = await seedAccount("https://pod.example.com", "alice");
+    expect(account.credentials.id).toBe("the-id");
+    expect(account.credentials.issuer).toBe("https://pod.example.com/");
   });
 });
 

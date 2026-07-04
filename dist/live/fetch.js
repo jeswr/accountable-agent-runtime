@@ -25,7 +25,8 @@
 // │  non-loopback `http:` base is refused up front by {@link assertBaseTransport} so    │
 // │  the hatch can never silently widen a real deployment.                             │
 // └──────────────────────────────────────────────────────────────────────────────────┘
-import { createGuardedFetch, isLoopbackAddress, normalizeHostForClassification, SsrfError, } from "@jeswr/guarded-fetch";
+import { isLoopbackAddress, normalizeHostForClassification, SsrfError } from "@jeswr/guarded-fetch";
+import { createNodeGuardedFetch } from "@jeswr/guarded-fetch/node";
 /**
  * Is `host` (a URL hostname, not an authority) a loopback name/literal? `localhost`
  * and any `*.localhost` name are loopback by the WHATWG/RFC 6761 rule; an IP literal is
@@ -85,9 +86,21 @@ export function assertBaseTransport(base) {
  * threads straight into `@jeswr/solid-vc`'s `createWebIdKeyResolver` / the
  * `createBitstringStatusResolver` / a `@jeswr/fetch-rdf` parse — the exact production
  * resolvers, modulo the one documented flag.
+ *
+ * DNS-PINNING (rebinding-closed). The harness is Node-only, so the guard is built with
+ * `@jeswr/guarded-fetch/node`'s {@link createNodeGuardedFetch} — the FULL SSRF guard wired to
+ * an undici DNS-pinning dispatcher (`requireDnsPinning`). This matters because these reads
+ * dereference IRIs pulled from UNTRUSTED credentials/container listings: the plain
+ * `createGuardedFetch` classifies the hostname's addresses but then lets `globalThis.fetch`
+ * RE-RESOLVE at connect time, leaving a DNS-rebinding TOCTOU window (a hostname that classifies
+ * public, then rebinds to `169.254.169.254`/an internal address on the socket connect). The
+ * node guard's validating lookup is the sole resolver and returns only pre-validated addresses,
+ * so a non-loopback base is genuinely the hardened production SSRF path — not merely
+ * classified-then-fetched-by-hostname. (For a loopback demo base the window is moot, but pinning
+ * is free and keeps the "production code path modulo one flag" claim honest.)
  */
 export function createDiscoveryFetch(base, options = {}) {
     const { loopback } = assertBaseTransport(base);
-    return createGuardedFetch({ ...options, allowLoopback: loopback });
+    return createNodeGuardedFetch({ ...options, allowLoopback: loopback });
 }
 //# sourceMappingURL=fetch.js.map

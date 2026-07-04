@@ -8,8 +8,35 @@
 // SECRET DISCIPLINE: the returned `{id, secret}` are handed straight to the auth layer and
 // live only in process memory — this module NEVER logs them and never writes them to disk.
 
+import { SsrfError } from "@jeswr/guarded-fetch";
 import type { ClientCredentials } from "@jeswr/solid-dpop";
 import { assertBaseTransport } from "./fetch.js";
+
+/**
+ * Fail-closed: assert a server-supplied control URL is same-origin as the account base before
+ * we POST secrets (the generated password, and the response bearing the client secret) at it.
+ * CSS's `/.account/` index returns the follow-up `controls.*` URLs; a hostile/misconfigured
+ * target (an external `--base`) could point them at an attacker origin and exfiltrate the
+ * freshly-minted credentials. The account setup already trusts `base` for account creation, but
+ * a THIRD origin must never receive them — so every control URL is origin-pinned to `base`.
+ *
+ * @throws SsrfError if `controlUrl` is malformed or not same-origin as `baseOrigin`.
+ */
+function assertSameOrigin(baseOrigin: string, controlUrl: string, label: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(controlUrl);
+  } catch {
+    throw new SsrfError(`account control URL for ${label} is not a valid URL`);
+  }
+  if (parsed.origin !== baseOrigin) {
+    throw new SsrfError(
+      `account control URL for ${label} (${parsed.origin}) is not same-origin as the ` +
+        `account base (${baseOrigin}) — refusing to POST credentials to a foreign origin`,
+    );
+  }
+  return controlUrl;
+}
 
 /** A provisioned actor account. */
 export interface SeededAccount {
@@ -95,10 +122,20 @@ export async function seedAccount(
     throw new Error(`GET /.account/ → ${indexResponse.status}`);
   }
   const { controls } = (await indexResponse.json()) as AccountControls;
-  await jsonPost(controls.password.create, { email, password }, jar);
-  await jsonPost(controls.account.pod, { name: pod }, jar);
+  // Origin-pin every server-supplied control URL to `base` BEFORE POSTing any secret at it.
+  const baseOrigin = new URL(root).origin;
+  await jsonPost(
+    assertSameOrigin(baseOrigin, controls.password.create, "password.create"),
+    { email, password },
+    jar,
+  );
+  await jsonPost(
+    assertSameOrigin(baseOrigin, controls.account.pod, "account.pod"),
+    { name: pod },
+    jar,
+  );
   const cc = (await jsonPost(
-    controls.account.clientCredentials,
+    assertSameOrigin(baseOrigin, controls.account.clientCredentials, "account.clientCredentials"),
     { name: "aar-demo", webId },
     jar,
   )) as {
